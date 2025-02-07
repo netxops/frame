@@ -123,11 +123,11 @@ const (
 // Indexes represent the elements that can be used for selecting a subset of
 // elements within a Series. Currently supported are:
 //
-//     int            // Matches the given index number
-//     []int          // Matches all given index numbers
-//     []bool         // Matches all elements in a Series marked as true
-//     Series [Int]   // Same as []int
-//     Series [Bool]  // Same as []bool
+//	int            // Matches the given index number
+//	[]int          // Matches all given index numbers
+//	[]bool         // Matches all elements in a Series marked as true
+//	Series [Int]   // Same as []int
+//	Series [Bool]  // Same as []bool
 type Indexes interface{}
 
 // New is the generic Series constructor
@@ -839,4 +839,150 @@ func (s Series) Slice(j, k int) Series {
 	}
 
 	return s.Subset(idxs)
+}
+
+// Equal compares two Series for equality.
+// Two Series are considered equal if they have the same name, type, length,
+// and all elements are equal.
+func (s Series) Equal(other Series) bool {
+	if s.Name != other.Name || s.t != other.t || s.Len() != other.Len() {
+		return false
+	}
+
+	for i := 0; i < s.Len(); i++ {
+		if !s.elements.Elem(i).Eq(other.elements.Elem(i)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// ValuesOptions represents options for the ValuesIterator
+type ValuesOptions struct {
+	Step       int  // Step size for iteration (default: 1)
+	Reverse    bool // Iterate in reverse order
+	SkipNaN    bool // Skip NaN values
+	OnlyUnique bool // Return only unique values
+}
+
+
+// ValuesIterator returns an iterator function for the values in the Series.
+func (s Series) ValuesIterator(opts ...ValuesOptions) func() (int, interface{}, bool) {
+	options := ValuesOptions{Step: 1}
+	if len(opts) > 0 {
+		options = opts[0]
+	}
+	if options.Step == 0 {
+		options.Step = 1
+	}
+
+	index := 0
+	if options.Reverse {
+		index = s.Len() - 1
+	}
+
+	seen := make(map[interface{}]bool)
+
+	return func() (int, interface{}, bool) {
+		for {
+			if options.Reverse {
+				if index < 0 {
+					return -1, nil, false
+				}
+			} else {
+				if index >= s.Len() {
+					return -1, nil, false
+				}
+			}
+
+			value := s.Val(index)
+
+			if options.SkipNaN && s.elements.Elem(index).IsNA() {
+				if options.Reverse {
+					index -= options.Step
+				} else {
+					index += options.Step
+				}
+				continue
+			}
+
+			if options.OnlyUnique {
+				if _, exists := seen[value]; exists {
+					if options.Reverse {
+						index -= options.Step
+					} else {
+						index += options.Step
+					}
+					continue
+				}
+				seen[value] = true
+			}
+
+			currentIndex := index
+			if options.Reverse {
+				index -= options.Step
+			} else {
+				index += options.Step
+			}
+
+			return currentIndex, value, true
+		}
+	}
+}
+
+// Concat concatenates multiple Series vertically.
+// All Series must have the same type.
+func Concat(seriesToConcat ...Series) Series {
+    if len(seriesToConcat) == 0 {
+        return Series{Err: fmt.Errorf("concat: no Series provided")}
+    }
+
+    // Check if all series have the same type
+    baseType := seriesToConcat[0].Type()
+    baseName := seriesToConcat[0].Name
+    for i, s := range seriesToConcat {
+        if s.Type() != baseType {
+            return Series{Err: fmt.Errorf("concat: Series at index %d has different type (%v) than the first Series (%v)", i, s.Type(), baseType)}
+        }
+    }
+
+    // Calculate total length
+    totalLen := 0
+    for _, s := range seriesToConcat {
+        totalLen += s.Len()
+    }
+
+    // Create a new series with the total length
+    var newElements Elements
+    switch baseType {
+    case String:
+        newElements = make(stringElements, totalLen)
+    case Int:
+        newElements = make(intElements, totalLen)
+    case Float:
+        newElements = make(floatElements, totalLen)
+    case Bool:
+        newElements = make(boolElements, totalLen)
+    default:
+        return Series{Err: fmt.Errorf("concat: unknown series type")}
+    }
+
+    // Copy elements from all series
+    currentIndex := 0
+    for _, s := range seriesToConcat {
+        for i := 0; i < s.Len(); i++ {
+            newElements.Elem(currentIndex).Set(s.elements.Elem(i))
+            currentIndex++
+        }
+    }
+
+    // Create and return the new Series
+    newSeries := Series{
+        Name:     baseName,
+        t:        baseType,
+        elements: newElements,
+    }
+
+    return newSeries
 }
