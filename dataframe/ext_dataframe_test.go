@@ -70,7 +70,7 @@ func TestMin(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := Min(df, tt.newColName, tt.columns...)
+			result := MinInColumns(df, tt.newColName, tt.columns...)
 			assert.Equal(t, tt.expected.Records(), result.Records(), "Min function returned unexpected result")
 		})
 	}
@@ -144,7 +144,7 @@ func TestMax(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := Max(df, tt.newColName, tt.columns...)
+			result := MaxInColumns(df, tt.newColName, tt.columns...)
 			assert.Equal(t, tt.expected.Records(), result.Records(), "Max function returned unexpected result")
 		})
 	}

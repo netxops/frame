@@ -1247,3 +1247,90 @@ func arithmeticOperation(s Series, value interface{}, op string, name string) Se
 		return s
 	}
 }
+
+// compareSeriesHelper is a helper function for comparing multiple series
+func compareSeriesHelper(ss []Series, name string, comparator Comparator) Series {
+	if len(ss) == 0 {
+		return Series{Err: fmt.Errorf("no series provided")}
+	}
+
+	// Check if all series have the same length
+	length := ss[0].Len()
+	for _, s := range ss[1:] {
+		if s.Len() != length {
+			return Series{Err: fmt.Errorf("all series must have the same length")}
+		}
+	}
+
+	// Check if all series have comparable types
+	var floatSeries *Series
+	for i, s := range ss {
+		if s.Type() != Int && s.Type() != Float && s.Type() != String {
+			return Series{Err: fmt.Errorf("series of type %v cannot be compared", s.Type())}
+		}
+		if s.Type() == Float {
+			floatSeries = &ss[i]
+		}
+	}
+
+	compareElements := func(a, b Element, c Comparator) (bool, error) {
+		var ret bool
+		switch c {
+		case Eq:
+			ret = a.Eq(b)
+		case Neq:
+			ret = a.Neq(b)
+		case Greater:
+			ret = a.Greater(b)
+		case GreaterEq:
+			ret = a.GreaterEq(b)
+		case Less:
+			ret = a.Less(b)
+		case LessEq:
+			ret = a.LessEq(b)
+		default:
+			return false, fmt.Errorf("unknown comparator: %v", c)
+		}
+		return ret, nil
+	}
+
+	// Create a new series to store the result values
+	var resultSeries Series
+	if floatSeries != nil && floatSeries.Len() > 0 {
+		resultSeries = floatSeries.Copy()
+	} else {
+		resultSeries = ss[0].Copy()
+	}
+	resultSeries.Name = name
+
+	// Compare values across all series
+	for i := 0; i < length; i++ {
+		var target Element
+		target = ss[0].elements.Elem(i)
+		for j := 0; j < len(ss); j++ {
+			// a := ss[j-1].elements.Elem(i)
+			b := ss[j].elements.Elem(i)
+			ret, err := compareElements(target, b, comparator)
+			if err != nil {
+				return Series{Err: err}
+			}
+			if !ret {
+				target = b
+			}
+		}
+		resultSeries.elements.Elem(i).Set(target)
+
+	}
+
+	return resultSeries
+}
+
+// Max returns a new Series with the maximum values from the input Series
+func Max(ss ...Series) Series {
+	return compareSeriesHelper(ss, "max", Greater)
+}
+
+// Min returns a new Series with the minimum values from the input Series
+func Min(ss ...Series) Series {
+	return compareSeriesHelper(ss, "min", Less)
+}

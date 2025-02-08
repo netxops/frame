@@ -2592,7 +2592,7 @@ func isValidType(op OperatorType, colType series.Type) bool {
 	}
 }
 
-func Min(df DataFrame, name string, columns ...string) series.Series {
+func MinInColumns(df DataFrame, name string, columns ...string) series.Series {
 	// return minSeries
 	s := operator(df, OperatorMin, columns...)
 	if s.Name != "" {
@@ -2601,7 +2601,7 @@ func Min(df DataFrame, name string, columns ...string) series.Series {
 	return s
 }
 
-func Max(df DataFrame, name string, columns ...string) series.Series {
+func MaxInColumns(df DataFrame, name string, columns ...string) series.Series {
 	s := operator(df, OperatorMax, columns...)
 	if s.Name != "" {
 		s.Name = name
