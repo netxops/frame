@@ -1901,7 +1901,7 @@ func TestDataFrame_CrossJoin(t *testing.T) {
 	)
 	c := a.CrossJoin(b)
 	expectedCSV := `
-A_0,B,C,D_0,A_1,F,D_1
+A,B,C,D,A_right,F,D_right
 1,a,5.1,true,1,1,true
 1,a,5.1,true,4,2,false
 1,a,5.1,true,2,8,false
@@ -1919,6 +1919,25 @@ A_0,B,C,D_0,A_1,F,D_1
 1,d,7.1,false,2,8,false
 1,d,7.1,false,5,9,false
 `
+	// expectedCSV := `
+	// A_0,B,C,D_0,A_1,F,D_1
+	// 1,a,5.1,true,1,1,true
+	// 1,a,5.1,true,4,2,false
+	// 1,a,5.1,true,2,8,false
+	// 1,a,5.1,true,5,9,false
+	// 2,b,6.0,true,1,1,true
+	// 2,b,6.0,true,4,2,false
+	// 2,b,6.0,true,2,8,false
+	// 2,b,6.0,true,5,9,false
+	// 3,c,6.0,false,1,1,true
+	// 3,c,6.0,false,4,2,false
+	// 3,c,6.0,false,2,8,false
+	// 3,c,6.0,false,5,9,false
+	// 1,d,7.1,false,1,1,true
+	// 1,d,7.1,false,4,2,false
+	// 1,d,7.1,false,2,8,false
+	// 1,d,7.1,false,5,9,false
+	// `
 	expected := ReadCSV(
 		strings.NewReader(expectedCSV),
 		WithTypes(map[string]series.Type{

@@ -692,106 +692,7 @@ func (df DataFrame) Row(index int) (map[string]series.Element, map[string]interf
 	return row, rowData
 }
 
-func (df DataFrame) Distinct() DataFrame {
-	if df.Err != nil {
-		return df
-	}
-
-	uniqueRows := make(map[string]bool)
-	var uniqueIndices []int
-
-	// 遍历数据框架的行
-	for i := 0; i < df.Nrow(); i++ {
-		// row := df.Row(i)
-		key := make([]string, df.Ncol())
-
-		// 为每一列创建一个唯一的字符串表示
-		for j, col := range df.columns {
-			key[j] = fmt.Sprintf("%v", col.Elem(i))
-		}
-
-		// 使用所有列的值组合作为唯一键
-		rowKey := strings.Join(key, "_")
-
-		if !uniqueRows[rowKey] {
-			uniqueRows[rowKey] = true
-			uniqueIndices = append(uniqueIndices, i)
-		}
-	}
-
-	// 使用唯一的行索引创建新的数据框架
-	return df.Subset(uniqueIndices)
-}
-
-// func AntiJoin(df1, df2 *DataFrame, on string) DataFrame {
-// 	// 创建一个map来存储df2中的键
-// 	keys := make(map[interface{}]bool)
-// 	iterator := df2.Col(on).ValuesIterator()
-// 	for _, val, ok := iterator(); ok; _, val, ok = iterator() {
-// 		keys[val] = true
-// 	}
-
-// 	// 创建一个新的DataFrame来存储结果
-// 	result := New()
-
-// 	// 遍历df1，只保留不在df2中的行
-// 	df1Iter := df1.Col(on).ValuesIterator()
-// 	for index, val, ok := df1Iter(); ok; _, val, ok = df1Iter() {
-// 		if !keys[val] {
-// 			_, data := df1.Row(index)
-// 			result = result.Append(data)
-// 		}
-// 	}
-
-// 	return result
-// }
-
-func AntiJoin(df1, df2 DataFrame, on string) DataFrame {
-	joined := df1.LeftJoin(df2, on)
-	return joined.Filter(
-		F{
-			Colname:    fmt.Sprintf("%s_right", on),
-			Comparator: series.CompFunc,
-			Comparando: func(e series.Element) bool { return e.IsNA() },
-		})
-}
-
-func CrossJoin(df1, df2 DataFrame) DataFrame {
-	var result *DataFrame
-
-	colNames := make([]string, 0)
-
-	// 为 df2 的列名添加后缀，以避免冲突
-	df2Names := make([]string, len(df2.Names()))
-	for i, name := range df2.Names() {
-		df2Names[i] = name + "_right"
-	}
-
-	colNames = append(colNames, df1.Names()...)
-	colNames = append(colNames, df2Names...)
-
-	for _, row1 := range df1.Maps() {
-		for _, row2 := range df2.Maps() {
-			newRow := make(map[string]interface{})
-			for _, name := range df1.Names() {
-				newRow[name] = row1[name]
-			}
-			for _, name := range df2.Names() {
-				newRow[name+"_right"] = row2[name]
-			}
-			if result == nil {
-				df := LoadMaps([]map[string]interface{}{newRow})
-				result = &df
-			} else {
-				*result = (*result).Append(newRow)
-			}
-		}
-	}
-
-	return *result
-}
-
-// F is the filtering structure
+// F is the filtering structurebb
 type F struct {
 	Colidx     int
 	Colname    string
@@ -2174,18 +2075,82 @@ func (df DataFrame) OuterJoin(b DataFrame, keys ...string) DataFrame {
 	return New(newCols...)
 }
 
+type nameSuffinx struct {
+	left  string
+	right string
+}
+
+type nameSuffixOption func(*nameSuffinx)
+
+func WithLeftSuffix(suffix string) nameSuffixOption {
+	return func(ns *nameSuffinx) {
+		ns.left = suffix
+	}
+}
+
+func WithRightSuffix(suffix string) nameSuffixOption {
+	return func(ns *nameSuffinx) {
+		ns.right = suffix
+	}
+}
+
 // CrossJoin returns a DataFrame containing the cross join of two DataFrames.
-func (df DataFrame) CrossJoin(b DataFrame) DataFrame {
+func (df DataFrame) CrossJoin(b DataFrame, opts ...nameSuffixOption) DataFrame {
+	options := nameSuffinx{"", "_right"}
+	for _, opt := range opts {
+		opt(&options)
+	}
 	aCols := df.columns
 	bCols := b.columns
+
+	// 分别记录两边重名的列
+	var leftCols []string
+	var rightCols []string
+	for _, col := range aCols {
+		if contains(b.Names(), col.Name) {
+			leftCols = append(leftCols, col.Name)
+		}
+	}
+	for _, col := range bCols {
+		if contains(df.Names(), col.Name) {
+			rightCols = append(rightCols, col.Name)
+		}
+	}
+
+	// 根据options和两边重名的列名，生成新的列名
+	// for _, col := range aCols {
+	// 	if contains(leftCols, col.Name) {
+	// 		col.Name = col.Name + options.left
+	// 	} else {
+	// 		col.Name = col.Name
+	// 	}
+	// }
+
+	// for _, col := range bCols {
+	// 	if contains(rightCols, col.Name) {
+	// 		col.Name = col.Name + options.right
+	// 	} else {
+	// 		col.Name = col.Name
+	// 	}
+	// }
+
 	// Initialize newCols
 	var newCols []series.Series
 	for i := 0; i < df.ncols; i++ {
-		newCols = append(newCols, aCols[i].Empty())
+		s := aCols[i].Empty()
+		if contains(leftCols, aCols[i].Name) {
+			s.Name = s.Name + options.left
+		}
+		newCols = append(newCols, s)
 	}
 	for i := 0; i < b.ncols; i++ {
-		newCols = append(newCols, bCols[i].Empty())
+		s := bCols[i].Empty()
+		if contains(rightCols, bCols[i].Name) {
+			s.Name = s.Name + options.right
+		}
+		newCols = append(newCols, s)
 	}
+
 	// Fill newCols
 	for i := 0; i < df.nrows; i++ {
 		for j := 0; j < b.nrows; j++ {
@@ -2509,62 +2474,6 @@ func (df DataFrame) Describe() DataFrame {
 	return ddf
 }
 
-// Concat concatenates multiple DataFrames vertically, including all columns from all DataFrames.
-// If a column is not present in all DataFrames, it will be filled with NaN values where missing.
-func Concat(listDf ...DataFrame) DataFrame {
-	if len(listDf) == 0 {
-		return DataFrame{Err: fmt.Errorf("concat: no DataFrames provided")}
-	}
-
-	// Check for errors in input DataFrames
-	for i, df := range listDf {
-		if df.Err != nil {
-			return DataFrame{Err: fmt.Errorf("concat: DataFrame at index %d has an error: %v", i, df.Err)}
-		}
-	}
-
-	// Collect all unique column names
-	uniqueCols := make(map[string]struct{})
-	for _, df := range listDf {
-		for _, colName := range df.Names() {
-			uniqueCols[colName] = struct{}{}
-		}
-	}
-
-	// Create a slice of all unique column names
-	allCols := make([]string, 0, len(uniqueCols))
-	for col := range uniqueCols {
-		allCols = append(allCols, col)
-	}
-
-	// Initialize series for each column
-	newCols := make([]series.Series, len(allCols))
-	for i, colName := range allCols {
-		var seriesToConcat []series.Series
-		for _, df := range listDf {
-			colIndex := df.colIndex(colName)
-			if colIndex != -1 {
-				seriesToConcat = append(seriesToConcat, df.columns[colIndex])
-			} else {
-				// If column is missing in this DataFrame, add a series of NaN values
-				nanSeries := series.New(make([]interface{}, df.nrows), series.Float, colName)
-				seriesToConcat = append(seriesToConcat, nanSeries)
-			}
-		}
-
-		newCols[i] = series.Concat(seriesToConcat...)
-		newCols[i].Name = colName
-	}
-
-	// Create new DataFrame
-	result := New(newCols...)
-	if result.Err != nil {
-		return DataFrame{Err: fmt.Errorf("concat: error creating result DataFrame: %v", result.Err)}
-	}
-
-	return result
-}
-
 // ValuesOptions represents options for the ValuesIterator
 type ValuesOptions struct {
 	returnRowIndex  bool
@@ -2597,7 +2506,7 @@ func WithSelectedColumns(columns ...string) ValuesOption {
 }
 
 // ValuesIterator returns an iterator function for the values in the DataFrame.
-func (df DataFrame) ValuesIterator(opts ...ValuesOption) func() (int, map[string]interface{}, bool) {
+func (df DataFrame) RowsIterator(opts ...ValuesOption) func() (int, map[string]interface{}, bool) {
 	options := ValuesOptions{
 		returnRowIndex:  true,
 		returnRowData:   true,
@@ -2653,39 +2562,260 @@ func (df DataFrame) ValuesIterator(opts ...ValuesOption) func() (int, map[string
 	}
 }
 
-// Append adds a new row to the DataFrame
-func (df DataFrame) Append(row map[string]interface{}) DataFrame {
+// 运算类型
+type OperatorType int
+
+const (
+	// OperatorAdd OperatorType = iota
+	// OperatorSub
+	// OperatorMul
+	// OperatorDiv
+	// OperatorMod
+	// OperatorPow
+	OperatorMin OperatorType = iota
+	OperatorMax
+	// OperatorConcat
+)
+
+func isValidType(op OperatorType, colType series.Type) bool {
+	switch op {
+	// case OperatorAdd, OperatorSub, OperatorMul, OperatorDiv, OperatorMod:
+	// 	return colType == series.Float || colType == series.Int
+	// case OperatorPow:
+	// 	return colType == series.Float
+	case OperatorMin, OperatorMax:
+		return colType == series.Float || colType == series.Int
+	// case OperatorConcat:
+	// 	return colType == series.String
+	default:
+		return false
+	}
+}
+
+func Min(df DataFrame, name string, columns ...string) series.Series {
+	// return minSeries
+	s := operator(df, OperatorMin, columns...)
+	if s.Name != "" {
+		s.Name = name
+	}
+	return s
+}
+
+func Max(df DataFrame, name string, columns ...string) series.Series {
+	s := operator(df, OperatorMax, columns...)
+	if s.Name != "" {
+		s.Name = name
+	}
+	return s
+}
+
+func operator(df DataFrame, op OperatorType, columns ...string) series.Series {
+	type colInfo struct {
+		Name     string
+		ColIndex int
+		Type     series.Type
+	}
+
+	var colInfos []colInfo
+	for index, colName := range columns {
+		colIndex := df.colIndex(colName)
+		if colIndex != -1 && isValidType(op, df.columns[colIndex].Type()) {
+			info := colInfo{
+				Name:     colName,
+				ColIndex: colIndex,
+				Type:     df.columns[colIndex].Type(),
+			}
+
+			if index == 0 {
+				colInfos = append(colInfos, info)
+			} else {
+				if df.columns[colIndex].Type() == colInfos[0].Type {
+					colInfos = append(colInfos, info)
+				}
+			}
+
+		}
+	}
+
+	if len(colInfos) == 0 {
+		return series.New([]interface{}{nil}, series.Float, "")
+	}
+
+	minSeries := df.columns[colInfos[0].ColIndex].Copy()
+	if len(colInfos) == 1 {
+		return minSeries
+	}
+
+	for i := 0; i < minSeries.Len(); i++ {
+		for _, colInfo := range colInfos {
+			if op == OperatorMin && minSeries.Elem(i).Greater(df.columns[colInfo.ColIndex].Elem(i)) {
+				minSeries.Elem(i).Set(df.columns[colInfo.ColIndex].Elem(i))
+			}
+
+			if op == OperatorMax && minSeries.Elem(i).Less(df.columns[colInfo.ColIndex].Elem(i)) {
+				minSeries.Elem(i).Set(df.columns[colInfo.ColIndex].Elem(i))
+			}
+		}
+	}
+
+	return minSeries
+}
+
+func (df DataFrame) Distinct() DataFrame {
 	if df.Err != nil {
 		return df
 	}
 
-	// Create a new DataFrame to avoid modifying the original
-	newDF := df.Copy()
+	uniqueRows := make(map[string]bool)
+	var uniqueIndices []int
 
-	// Check if all columns in the row exist in the DataFrame
-	for colName := range row {
-		if newDF.colIndex(colName) == -1 {
-			return DataFrame{Err: fmt.Errorf("append: column '%s' does not exist in DataFrame", colName)}
+	// 遍历数据框架的行
+	for i := 0; i < df.Nrow(); i++ {
+		// row := df.Row(i)
+		key := make([]string, df.Ncol())
+
+		// 为每一列创建一个唯一的字符串表示
+		for j, col := range df.columns {
+			key[j] = fmt.Sprintf("%v", col.Elem(i))
+		}
+
+		// 使用所有列的值组合作为唯一键
+		rowKey := strings.Join(key, "_")
+
+		if !uniqueRows[rowKey] {
+			uniqueRows[rowKey] = true
+			uniqueIndices = append(uniqueIndices, i)
 		}
 	}
 
-	// Append the new values to each column
-	for i, col := range newDF.columns {
-		value, exists := row[col.Name]
-		if !exists {
-			// If the column is not in the row, append a null value
-			col.Append(nil)
-		} else {
-			col.Append(value)
-		}
+	// 使用唯一的行索引创建新的数据框架
+	return df.Subset(uniqueIndices)
+}
 
-		if newDF.columns[i].Err != nil {
-			return DataFrame{Err: fmt.Errorf("append: error appending to column '%s': %v", col.Name, newDF.columns[i].Err)}
-		}
+func AntiJoin(df1, df2 DataFrame, on string) DataFrame {
+	// 检查输入
+	if df1.Err != nil {
+		return df1
+	}
+	if df2.Err != nil {
+		df1.Err = fmt.Errorf("anti join error: right dataframe has errors: %v", df2.Err)
+		return df1
 	}
 
-	// Update the number of rows
-	newDF.nrows++
+	// 检查 'on' 列是否存在于两个 DataFrame 中
+	if !contains(df1.Names(), on) || !contains(df2.Names(), on) {
+		df1.Err = fmt.Errorf("anti join error: column '%s' not found in both dataframes", on)
+		return df1
+	}
 
-	return newDF
+	// 获取 df2 中 'on' 列的唯一值
+	iter := df2.Col(on).ValuesIterator(series.WithOnlyUnique(true))
+	df2Values := series.NewFromIterator(iter, on)
+
+	// 创建一个函数来检查元素是否不在 df2Values 中
+	notIn := func(el series.Element) bool {
+		for i := 0; i < df2Values.Len(); i++ {
+			if el.Eq(df2Values.Elem(i)) {
+				return false
+			}
+		}
+		return true
+	}
+
+	// 使用 Filter 方法来保留 df1 中不在 df2 中的行
+	result := df1.Filter(
+		F{
+			Colname:    on,
+			Comparator: series.CompFunc,
+			Comparando: notIn,
+		})
+
+	return result
+}
+
+func Concat(dfs ...DataFrame) DataFrame {
+	if len(dfs) == 0 {
+		return New()
+	}
+
+	first := dfs[0]
+	for _, df := range dfs[1:] {
+		first = first.Concat(df)
+	}
+
+	return first
+}
+
+func contains[T int | float64 | string](s []T, str T) bool {
+	for _, v := range s {
+		if v == str {
+			return true
+		}
+	}
+	return false
+}
+
+type GroupOption func(DataFrame) DataFrame
+
+func WithLeftJoin(df DataFrame, keys ...string) GroupOption {
+	return func(other DataFrame) DataFrame {
+		return df.LeftJoin(other, keys...)
+	}
+}
+
+func WithRightJoin(df DataFrame, keys ...string) GroupOption {
+	return func(other DataFrame) DataFrame {
+		return df.RightJoin(other, keys...)
+	}
+}
+
+func WithInnerJoin(df DataFrame, keys ...string) GroupOption {
+	return func(other DataFrame) DataFrame {
+		return df.InnerJoin(other, keys...)
+	}
+}
+
+func WithCrossJoin(df DataFrame, opts ...nameSuffixOption) GroupOption {
+	return func(other DataFrame) DataFrame {
+		return df.CrossJoin(other, opts...)
+	}
+}
+
+// func GroupAggregate(df DataFrame, ons []string, fns []AggregationType, columns []string, opts ...GroupOption) DataFrame {
+// 	// 按 idx 分组并计算 pct_overlap 的最大值
+// 	groupedMax := df.GroupBy(ons...).Aggregation(fns, columns)
+// 	// groupedMax = groupedMax.Rename("pct_overlap", "max_overlap")
+
+// 	// 将最大值合并回原始数据框
+// 	for _, opt := range opts {
+// 		groupedMax = opt(groupedMax)
+// 	}
+
+// 	return groupedMax
+// }
+
+func GroupOn(ons ...string) func() []string {
+	return func() []string {
+		return ons
+	}
+}
+
+func AggreateOn(fns []AggregationType, columns []string) func() ([]AggregationType, []string) {
+	return func() ([]AggregationType, []string) {
+		return fns, columns
+	}
+}
+
+func GroupAggregate(df DataFrame, groupOn func() []string, aggOn func() ([]AggregationType, []string), opts ...GroupOption) DataFrame {
+	// 按 idx 分组并计算 pct_overlap 的最大值
+	fns, columns := aggOn()
+	groupedMax := df.GroupBy(groupOn()...).Aggregation(fns, columns)
+	// groupedMax = groupedMax.Rename("pct_overlap", "max_overlap")
+
+	// 将最大值合并回原始数据框
+	for _, opt := range opts {
+		groupedMax = opt(groupedMax)
+	}
+
+	return groupedMax
 }

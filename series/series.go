@@ -8,6 +8,7 @@ import (
 
 	"math"
 
+	"github.com/spf13/cast"
 	"gonum.org/v1/gonum/stat"
 )
 
@@ -866,17 +867,43 @@ type ValuesOptions struct {
 	OnlyUnique bool // Return only unique values
 }
 
+func WithStep(step int) IteratorOption {
+	return func(opts *ValuesOptions) {
+		opts.Step = step
+	}
+}
+
+func WithReverse(reverse bool) IteratorOption {
+	return func(opts *ValuesOptions) {
+		opts.Reverse = reverse
+	}
+}
+
+func WithSkipNaN(skipNaN bool) IteratorOption {
+	return func(opts *ValuesOptions) {
+		opts.SkipNaN = skipNaN
+	}
+}
+
+func WithOnlyUnique(onlyUnique bool) IteratorOption {
+	return func(opts *ValuesOptions) {
+		opts.OnlyUnique = onlyUnique
+	}
+}
+
+type IteratorOption func(*ValuesOptions)
+type iterator func() (int, interface{}, bool)
 
 // ValuesIterator returns an iterator function for the values in the Series.
-func (s Series) ValuesIterator(opts ...ValuesOptions) func() (int, interface{}, bool) {
+func (s Series) ValuesIterator(opts ...IteratorOption) iterator {
 	options := ValuesOptions{Step: 1}
-	if len(opts) > 0 {
-		options = opts[0]
+
+	for _, opt := range opts {
+		opt(&options)
 	}
 	if options.Step == 0 {
 		options.Step = 1
 	}
-
 	index := 0
 	if options.Reverse {
 		index = s.Len() - 1
@@ -931,58 +958,234 @@ func (s Series) ValuesIterator(opts ...ValuesOptions) func() (int, interface{}, 
 	}
 }
 
-// Concat concatenates multiple Series vertically.
-// All Series must have the same type.
-func Concat(seriesToConcat ...Series) Series {
-    if len(seriesToConcat) == 0 {
-        return Series{Err: fmt.Errorf("concat: no Series provided")}
-    }
+func NewFromIterator(it iterator, name string) Series {
+	index := 0
+	var result Series
+	for _, v, ok := it(); ok; _, v, ok = it() {
+		var t Type
+		if index == 0 {
+			switch v.(type) {
+			case float64:
+				t = Float
+			case string:
+				t = String
+			case bool:
+				t = Bool
+			default:
+				t = String
+			}
+			result = New(v, t, name)
+		} else {
+			result.Append(v)
+		}
+		index++
+	}
 
-    // Check if all series have the same type
-    baseType := seriesToConcat[0].Type()
-    baseName := seriesToConcat[0].Name
-    for i, s := range seriesToConcat {
-        if s.Type() != baseType {
-            return Series{Err: fmt.Errorf("concat: Series at index %d has different type (%v) than the first Series (%v)", i, s.Type(), baseType)}
-        }
-    }
+	return result
+}
 
-    // Calculate total length
-    totalLen := 0
-    for _, s := range seriesToConcat {
-        totalLen += s.Len()
-    }
+// Number is a constraint that permits any number type
+type Number interface {
+	int | int8 | int16 | int32 | int64 | uint | uint8 | uint16 | uint32 | uint64 | float32 | float64
+}
 
-    // Create a new series with the total length
-    var newElements Elements
-    switch baseType {
-    case String:
-        newElements = make(stringElements, totalLen)
-    case Int:
-        newElements = make(intElements, totalLen)
-    case Float:
-        newElements = make(floatElements, totalLen)
-    case Bool:
-        newElements = make(boolElements, totalLen)
-    default:
-        return Series{Err: fmt.Errorf("concat: unknown series type")}
-    }
+// arithmeticOp defines the signature for arithmetic operations
+type arithmeticOp func(a, b float64) float64
 
-    // Copy elements from all series
-    currentIndex := 0
-    for _, s := range seriesToConcat {
-        for i := 0; i < s.Len(); i++ {
-            newElements.Elem(currentIndex).Set(s.elements.Elem(i))
-            currentIndex++
-        }
-    }
+// Add performs addition with the given value or Series
+func (s Series) Add(value interface{}, name string) Series {
+	return arithmeticOperation(s, value, "add")
+}
 
-    // Create and return the new Series
-    newSeries := Series{
-        Name:     baseName,
-        t:        baseType,
-        elements: newElements,
-    }
+// Sub performs subtraction with the given value or Series
+func (s Series) Sub(value interface{}, name string) Series {
+	return arithmeticOperation(s, value, "sub")
+}
 
-    return newSeries
+// Mul performs multiplication with the given value or Series
+func (s Series) Mul(value interface{}, name string) Series {
+	return arithmeticOperation(s, value, "mul")
+}
+
+// Div performs division with the given value or Series
+func (s Series) Div(value interface{}, name string) Series {
+	return arithmeticOperation(s, value, "div")
+}
+
+// func (s Series) Div(value interface{}) Series {
+// 	return arithmeticOperation(s, value, func(a, b float64) float64 {
+// 		if b == 0 {
+// 			return math.NaN()
+// 		}
+// 		return a / b
+// 	})
+// }
+
+// performArithmetic is a generic function to perform arithmetic operations
+func performArithmetic(s Series, value interface{}, op string) Series {
+	if s.Type() != Int && s.Type() != Float {
+		s.Err = fmt.Errorf("cannot perform arithmetic operation on series of type %s", s.Type())
+		return s
+	}
+	var finalType Type
+	rt := reflect.TypeOf(value)
+	var emptyList interface{}
+	switch rt.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if s.Type() == Int {
+			finalType = Int
+			emptyList = make([]int, s.Len())
+		} else {
+			finalType = Float
+			emptyList = make([]float64, s.Len())
+		}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if s.Type() == Int {
+			finalType = Int
+			emptyList = make([]int, s.Len())
+		} else {
+			finalType = Float
+			emptyList = make([]float64, s.Len())
+		}
+	case reflect.Float32, reflect.Float64:
+		finalType = Float
+		emptyList = make([]float64, s.Len())
+	default:
+		s.Err = fmt.Errorf("invalid type for arithmetic operation: %T", value)
+		return s
+	}
+
+	result := New(emptyList, finalType, s.Name+"_"+op+"_"+fmt.Sprintf("%T", value))
+	for i := 0; i < s.Len(); i++ {
+		value, err := operator(s.elements.Elem(i).Val(), value, op, finalType)
+		if err != nil {
+			s.Err = err
+			return s
+		}
+		result.elements.Elem(i).Set(value)
+	}
+
+	return result
+}
+
+// performSeriesArithmetic performs arithmetic operations between two Series
+func (s Series) performSeriesArithmetic(other Series, op string) Series {
+	if s.Err != nil {
+		return s
+	}
+	if other.Err != nil {
+		s.Err = other.Err
+		return s
+	}
+	if s.Len() != other.Len() {
+		s.Err = fmt.Errorf("cannot perform operation on series of different lengths")
+		return s
+	}
+
+	// 根据s.Type()和other.Type()判断最终Series的类型
+	var emptyList interface{}
+	var finalType Type
+	if s.Type() == Int && other.Type() == Int {
+		finalType = Int
+		emptyList = make([]int, s.Len())
+	} else if s.Type() == Float && other.Type() == Int {
+		finalType = Float
+		emptyList = make([]float64, s.Len())
+	} else if s.Type() == Int && other.Type() == Float {
+		finalType = Float
+		emptyList = make([]float64, s.Len())
+	} else if s.Type() == Float && other.Type() == Float {
+		finalType = Float
+		emptyList = make([]float64, s.Len())
+	} else {
+		s.Err = fmt.Errorf("cannot perform arithmetic operation between series of different types")
+		return s
+	}
+
+	result := New(emptyList, finalType, s.Name+"_"+op+"_"+other.Name)
+	// result := s.Copy()
+	for i := 0; i < s.Len(); i++ {
+		value, err := operator(s.elements.Elem(i).Val(), other.elements.Elem(i).Val(), op, finalType)
+		if err != nil {
+			s.Err = err
+			return s
+		}
+		result.Elem(i).Set(value)
+	}
+	return result
+}
+
+func operator(a, b interface{}, op string, finalType Type) (Element, error) {
+	if finalType != Int && finalType != Float {
+		return nil, fmt.Errorf("cannot perform arithmetic operation between series of different types")
+	}
+	// 都转换为float64进行操作，然后根据finalType转换为最终类型
+	var aFloat, bFloat float64
+	var err error
+	switch a := a.(type) {
+	case float64:
+		aFloat = a
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		aFloat, err = cast.ToFloat64E(a)
+		if err != nil {
+			return nil, fmt.Errorf("cannot convert %v to float64", a)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported type for arithmetic operation: %v", reflect.TypeOf(a))
+	}
+
+	switch b := b.(type) {
+	case float64:
+		bFloat = b
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		bFloat, err = cast.ToFloat64E(b)
+		if err != nil {
+			return nil, fmt.Errorf("cannot convert %v to float64", b)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported type for arithmetic operation: %v", reflect.TypeOf(b))
+	}
+
+	var value interface{}
+	switch op {
+	case "add":
+		value = aFloat + bFloat
+	case "sub":
+		value = aFloat - bFloat
+	case "mul":
+		value = aFloat * bFloat
+	case "div":
+		if bFloat == 0 {
+			return nil, fmt.Errorf("division by zero")
+		}
+		value = aFloat / bFloat
+	default:
+		return nil, fmt.Errorf("unsupported arithmetic operation: %v", op)
+	}
+
+	if finalType == Int {
+		return &intElement{
+			e: int(value.(float64)),
+		}, nil
+	}
+
+	return &floatElement{e: value.(float64)}, nil
+
+}
+
+// arithmeticOperation is a helper function to perform arithmetic operations
+func arithmeticOperation(s Series, value interface{}, op string) Series {
+	if s.Err != nil {
+		return s
+	}
+
+	switch v := value.(type) {
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		return performArithmetic(s, value, op)
+	case Series:
+		return s.performSeriesArithmetic(v, op)
+	default:
+		s.Err = fmt.Errorf("unsupported type for arithmetic operation: %v", reflect.TypeOf(value))
+		return s
+	}
 }
