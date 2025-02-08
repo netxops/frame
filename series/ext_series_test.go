@@ -201,7 +201,7 @@ func TestMax(t *testing.T) {
 		s2 := Ints([]int{4, 5, 6})
 		s3 := Ints([]int{7, 8, 9})
 
-		result := Max(s1, s2, s3)
+		result := Max("max_name", s1, s2, s3)
 
 		// assert.Equal(t, "max", result.Name)
 		got, err := result.Int()
@@ -214,9 +214,9 @@ func TestMax(t *testing.T) {
 		s2 := Floats([]float64{4.4, 5.5, 6.6})
 		s3 := Floats([]float64{7.7, 8.8, 9.9})
 
-		result := Max(s1, s2, s3)
+		result := Max("max_name", s1, s2, s3)
 
-		assert.Equal(t, "max", result.Name)
+		assert.Equal(t, "max_name", result.Name)
 		assert.Equal(t, []float64{7.7, 8.8, 9.9}, result.Float())
 	})
 
@@ -224,9 +224,9 @@ func TestMax(t *testing.T) {
 		s1 := Ints([]int{1, 2, 3})
 		s2 := Floats([]float64{4.4, 5.5, 6.6})
 
-		result := Max(s1, s2)
+		result := Max("max_name", s1, s2)
 
-		assert.Equal(t, "max", result.Name)
+		assert.Equal(t, "max_name", result.Name)
 		assert.Equal(t, []float64{4.4, 5.5, 6.6}, result.Float())
 	})
 
@@ -234,9 +234,9 @@ func TestMax(t *testing.T) {
 		s1 := Strings([]string{"a", "b", "c"})
 		s2 := Strings([]string{"d", "e", "f"})
 
-		result := Max(s1, s2)
+		result := Max("max_name", s1, s2)
 
-		assert.Equal(t, "max", result.Name)
+		assert.Equal(t, "max_name", result.Name)
 		assert.Equal(t, []string{"d", "e", "f"}, result.Records())
 	})
 
@@ -244,14 +244,14 @@ func TestMax(t *testing.T) {
 		s1 := Ints([]int{1, 2, 3})
 		s2 := Ints([]int{4, 5})
 
-		result := Max(s1, s2)
+		result := Max("max_name", s1, s2)
 
 		assert.Error(t, result.Err)
 		assert.Contains(t, result.Err.Error(), "all series must have the same length")
 	})
 
 	t.Run("Max with no series", func(t *testing.T) {
-		result := Max()
+		result := Max("max_name")
 
 		assert.Error(t, result.Err)
 		assert.Contains(t, result.Err.Error(), "no series provided")
@@ -261,7 +261,7 @@ func TestMax(t *testing.T) {
 		s1 := Ints([]int{1, 2, 3})
 		s2 := Bools([]bool{true, false, true})
 
-		result := Max(s1, s2)
+		result := Max("max_name", s1, s2)
 
 		assert.Error(t, result.Err)
 		assert.Contains(t, result.Err.Error(), "series of type")
@@ -274,9 +274,9 @@ func TestMin(t *testing.T) {
 		s2 := Ints([]int{1, 2, 3})
 		s3 := Ints([]int{7, 8, 9})
 
-		result := Min(s1, s2, s3)
+		result := Min("min_name", s1, s2, s3)
 
-		assert.Equal(t, "min", result.Name)
+		assert.Equal(t, "min_name", result.Name)
 		got, err := result.Int()
 		assert.NoError(t, err)
 		assert.Equal(t, []int{1, 2, 3}, got)
@@ -287,9 +287,9 @@ func TestMin(t *testing.T) {
 		s2 := Floats([]float64{1.1, 2.2, 3.3})
 		s3 := Floats([]float64{7.7, 8.8, 9.9})
 
-		result := Min(s1, s2, s3)
+		result := Min("min_name", s1, s2, s3)
 
-		assert.Equal(t, "min", result.Name)
+		assert.Equal(t, "min_name", result.Name)
 		assert.Equal(t, []float64{1.1, 2.2, 3.3}, result.Float())
 	})
 
@@ -297,9 +297,9 @@ func TestMin(t *testing.T) {
 		s1 := Ints([]int{4, 5, 6})
 		s2 := Floats([]float64{1.1, 2.2, 3.3})
 
-		result := Min(s1, s2)
+		result := Min("min_name", s1, s2)
 
-		assert.Equal(t, "min", result.Name)
+		assert.Equal(t, "min_name", result.Name)
 		assert.Equal(t, []float64{1.1, 2.2, 3.3}, result.Float())
 	})
 
@@ -307,9 +307,9 @@ func TestMin(t *testing.T) {
 		s1 := Strings([]string{"d", "e", "f"})
 		s2 := Strings([]string{"a", "b", "c"})
 
-		result := Min(s1, s2)
+		result := Min("min_name", s1, s2)
 
-		assert.Equal(t, "min", result.Name)
+		assert.Equal(t, "min_name", result.Name)
 		assert.Equal(t, []string{"a", "b", "c"}, result.Records())
 	})
 
@@ -317,14 +317,14 @@ func TestMin(t *testing.T) {
 		s1 := Ints([]int{1, 2, 3})
 		s2 := Ints([]int{4, 5})
 
-		result := Min(s1, s2)
+		result := Min("min_name", s1, s2)
 
 		assert.Error(t, result.Err)
 		assert.Contains(t, result.Err.Error(), "all series must have the same length")
 	})
 
 	t.Run("Min with no series", func(t *testing.T) {
-		result := Min()
+		result := Min("min_name")
 
 		assert.Error(t, result.Err)
 		assert.Contains(t, result.Err.Error(), "no series provided")
@@ -334,7 +334,7 @@ func TestMin(t *testing.T) {
 		s1 := Ints([]int{1, 2, 3})
 		s2 := Bools([]bool{true, false, true})
 
-		result := Min(s1, s2)
+		result := Min("min_name", s1, s2)
 
 		assert.Error(t, result.Err)
 		assert.Contains(t, result.Err.Error(), "series of type")

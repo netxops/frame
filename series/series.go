@@ -1326,11 +1326,21 @@ func compareSeriesHelper(ss []Series, name string, comparator Comparator) Series
 }
 
 // Max returns a new Series with the maximum values from the input Series
-func Max(ss ...Series) Series {
-	return compareSeriesHelper(ss, "max", Greater)
+func Max(name string, ss ...Series) Series {
+	s := compareSeriesHelper(ss, "max", Greater)
+	if name != "" {
+		s.Name = name
+
+	}
+	return s
 }
 
 // Min returns a new Series with the minimum values from the input Series
-func Min(ss ...Series) Series {
-	return compareSeriesHelper(ss, "min", Less)
+func Min(name string, ss ...Series) Series {
+	s := compareSeriesHelper(ss, "min", Less)
+	if name != "" {
+		s.Name = name
+
+	}
+	return s
 }
