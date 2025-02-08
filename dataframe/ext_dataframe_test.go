@@ -437,28 +437,6 @@ func TestGroupAggregate(t *testing.T) {
 		// assert.Equal(t, expected.Records(), result.Records())
 	})
 
-	// 测试带有 LeftJoin 选项的 GroupAggregate
-	// t.Run("GroupAggregate with LeftJoin", func(t *testing.T) {
-	// 	otherDF := New(
-	// 		series.New([]string{"A", "B", "C"}, series.String, "category"),
-	// 		series.New([]string{"High", "Medium", "Low"}, series.String, "rank"),
-	// 	)
-
-	// 	result := GroupAggregate(df, GroupOn([]string{"category"}...), AggreateOn([]AggregationType{Aggregation_MEAN, Aggregation_MAX}, []string{"value", "pct_overlap"}), WithLeftJoin(otherDF, "category"))
-
-	// 	expected := New(
-	// 		series.New([]string{"A", "B"}, series.String, "category"),
-	// 		// series.New([]float64{5, 4}, series.Float, "value_max"),
-	// 		// series.New([]float64{0.3, 0.3}, series.Float, "pct_overlap_avg"),
-	// 		series.New([]float64{0.5, 0.4}, series.Float, "pct_overlap_MAX"),
-	// 		series.New([]float64{3, 3}, series.Float, "value_MEAN"),
-	// 		series.New([]string{"High", "Medium"}, series.String, "rank"),
-	// 	)
-
-	// 	assert.Equal(t, expected.Names(), result.Names())
-	// 	assert.Equal(t, expected.Records(), result.Records())
-	// })
-
 	t.Run("GroupAggregate with LeftJoin", func(t *testing.T) {
 		result := GroupAggregate(df,
 			GroupOn([]string{"category"}...),
