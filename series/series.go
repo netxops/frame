@@ -350,6 +350,65 @@ func (s Series) Set(indexes Indexes, newvalues Series) Series {
 	return s
 }
 
+func (s Series) NewFill(value interface{}, t Type, name string) Series {
+	valueList, ok := prepareValueList(value, s.Len(), t)
+	if !ok {
+		return Series{
+			Name: name,
+			t:    t,
+			Err:  fmt.Errorf("newfill error: value type mismatch"),
+		}
+	}
+
+	return New(valueList, t, name)
+}
+
+func prepareValueList(value interface{}, n int, t Type) (interface{}, bool) {
+	var valueList interface{}
+	switch t {
+	case String:
+		s, ok := value.(string)
+		if ok {
+			valueList = make([]string, n)
+			for i := 0; i < n; i++ {
+				valueList.([]string)[i] = s
+			}
+		}
+		return valueList, ok
+	case Int:
+		ii, ok := value.(int)
+		if ok {
+			valueList = make([]int, n)
+			for i := 0; i < n; i++ {
+				valueList.([]int)[i] = ii
+			}
+		}
+		// 也接受可以转换为int的类型
+		return valueList, ok
+	case Float:
+		f, ok := value.(float64)
+		if ok {
+			valueList = make([]float64, n)
+			for i := 0; i < n; i++ {
+				valueList.([]float64)[i] = f
+			}
+		}
+		// 也接受int，因为int可以安全地转换为float
+		return valueList, ok
+	case Bool:
+		b, ok := value.(bool)
+		if ok {
+			valueList = make([]bool, n)
+			for i := 0; i < n; i++ {
+				valueList.([]bool)[i] = b
+			}
+		}
+		return value, ok
+	default:
+		return value, false
+	}
+}
+
 // HasNaN checks whether the Series contain NaN elements.
 func (s Series) HasNaN() bool {
 	for i := 0; i < s.Len(); i++ {
