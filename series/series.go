@@ -994,35 +994,26 @@ type arithmeticOp func(a, b float64) float64
 
 // Add performs addition with the given value or Series
 func (s Series) Add(value interface{}, name string) Series {
-	return arithmeticOperation(s, value, "add")
+	return arithmeticOperation(s, value, "add", name)
 }
 
 // Sub performs subtraction with the given value or Series
 func (s Series) Sub(value interface{}, name string) Series {
-	return arithmeticOperation(s, value, "sub")
+	return arithmeticOperation(s, value, "sub", name)
 }
 
 // Mul performs multiplication with the given value or Series
 func (s Series) Mul(value interface{}, name string) Series {
-	return arithmeticOperation(s, value, "mul")
+	return arithmeticOperation(s, value, "mul", name)
 }
 
 // Div performs division with the given value or Series
 func (s Series) Div(value interface{}, name string) Series {
-	return arithmeticOperation(s, value, "div")
+	return arithmeticOperation(s, value, "div", name)
 }
 
-// func (s Series) Div(value interface{}) Series {
-// 	return arithmeticOperation(s, value, func(a, b float64) float64 {
-// 		if b == 0 {
-// 			return math.NaN()
-// 		}
-// 		return a / b
-// 	})
-// }
-
 // performArithmetic is a generic function to perform arithmetic operations
-func performArithmetic(s Series, value interface{}, op string) Series {
+func performArithmetic(s Series, value interface{}, op string, name string) Series {
 	if s.Type() != Int && s.Type() != Float {
 		s.Err = fmt.Errorf("cannot perform arithmetic operation on series of type %s", s.Type())
 		return s
@@ -1055,7 +1046,11 @@ func performArithmetic(s Series, value interface{}, op string) Series {
 		return s
 	}
 
-	result := New(emptyList, finalType, s.Name+"_"+op+"_"+fmt.Sprintf("%T", value))
+	if name == "" {
+		name = s.Name + "_" + op + "_" + fmt.Sprintf("%T", value)
+	}
+
+	result := New(emptyList, finalType, name)
 	for i := 0; i < s.Len(); i++ {
 		value, err := operator(s.elements.Elem(i).Val(), value, op, finalType)
 		if err != nil {
@@ -1069,7 +1064,7 @@ func performArithmetic(s Series, value interface{}, op string) Series {
 }
 
 // performSeriesArithmetic performs arithmetic operations between two Series
-func (s Series) performSeriesArithmetic(other Series, op string) Series {
+func (s Series) performSeriesArithmetic(other Series, op string, name string) Series {
 	if s.Err != nil {
 		return s
 	}
@@ -1102,7 +1097,11 @@ func (s Series) performSeriesArithmetic(other Series, op string) Series {
 		return s
 	}
 
-	result := New(emptyList, finalType, s.Name+"_"+op+"_"+other.Name)
+	if name == "" {
+		name = s.Name + "_" + op + "_" + other.Name
+	}
+
+	result := New(emptyList, finalType, name)
 	// result := s.Copy()
 	for i := 0; i < s.Len(); i++ {
 		value, err := operator(s.elements.Elem(i).Val(), other.elements.Elem(i).Val(), op, finalType)
@@ -1174,16 +1173,16 @@ func operator(a, b interface{}, op string, finalType Type) (Element, error) {
 }
 
 // arithmeticOperation is a helper function to perform arithmetic operations
-func arithmeticOperation(s Series, value interface{}, op string) Series {
+func arithmeticOperation(s Series, value interface{}, op string, name string) Series {
 	if s.Err != nil {
 		return s
 	}
 
 	switch v := value.(type) {
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
-		return performArithmetic(s, value, op)
+		return performArithmetic(s, value, op, name)
 	case Series:
-		return s.performSeriesArithmetic(v, op)
+		return s.performSeriesArithmetic(v, op, name)
 	default:
 		s.Err = fmt.Errorf("unsupported type for arithmetic operation: %v", reflect.TypeOf(value))
 		return s
