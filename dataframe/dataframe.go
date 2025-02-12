@@ -2819,3 +2819,68 @@ func GroupAggregate(df DataFrame, groupOn func() []string, aggOn func() ([]Aggre
 
 	return groupedMax
 }
+func (df DataFrame) Transpose() DataFrame {
+	if df.Err != nil {
+		return df
+	}
+	types := df.Types()
+	for _, t := range types {
+		if types[0] != t {
+			c := df.Copy()
+			c.Err = fmt.Errorf("transpose error: cannot transpose dataframe with columns of different types: %v", types)
+			return c
+		}
+	}
+
+	nrows, ncols := df.Dims()
+
+	// 修改这里：创建足够长的 newColumns 切片
+	newColumns := make([]series.Series, nrows+1)
+	newColumns[0] = series.New(append([]string{"Index"}, df.Names()...), series.String, "")
+
+	// 获取原DataFrame的类型
+
+	// 创建索引列
+	indexData := make([]interface{}, nrows+1)
+	indexData[0] = "Index"
+	for i := 0; i < nrows; i++ {
+		indexData[i+1] = fmt.Sprintf("%d", i)
+	}
+	// newColumns[0] = series.New(indexData, series.String, "")
+	// newColumns[0] = series.New(append([]string{"Index"}, df.Names()...), series.String, "")
+
+	// newColumns[1] = series.New(indexData, series.String, "0")
+	// totalData := make([]interface{}, nrows+1)
+	newColumns[0] = series.New(append([]string{}, df.Names()...), series.String, "")
+	for i := 0; i < nrows; i++ {
+		colData := make([]interface{}, ncols)
+		for j := 0; j < ncols; j++ {
+			elem := df.columns[j].Elem(i)
+			if elem.IsNA() {
+				colData[j] = nil // 处理NA值
+			} else {
+				colData[j] = elem.Val()
+			}
+		}
+		newColumns[i+1] = series.New(colData, types[0], fmt.Sprintf("%d", i+1))
+	}
+
+	// // 遍历原DataFrame的每一列，创建新的行
+	// for i := 0; i < ncols; i++ {
+	// 	colData := make([]interface{}, nrows+1)
+	// 	colData[0] = df.Names()[i] // 列名作为新的第一行
+	// 	for j := 0; j < nrows; j++ {
+	// 		elem := df.columns[i].Elem(j)
+	// 		if elem.IsNA() {
+	// 			colData[j+1] = nil // 处理NA值
+	// 		} else {
+	// 			colData[j+1] = elem.Val()
+	// 		}
+	// 	}
+	// 	// 使用原始列的类型创建新的Series
+	// 	newColumns[i+1] = series.New(colData, types[i], fmt.Sprintf("%d", i+1))
+	// }
+
+	// 创建并返回新的DataFrame
+	return New(newColumns...)
+}

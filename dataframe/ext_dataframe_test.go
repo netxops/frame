@@ -1,6 +1,7 @@
 package dataframe
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/netxops/frame/series"
@@ -472,4 +473,76 @@ func TestGroupAggregate(t *testing.T) {
 	// 	assert.Equal(t, expected.Names(), result.Names())
 	// 	assert.Equal(t, expected.Records(), result.Records())
 	// })
+}
+func TestDataFrame_Transpose(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    DataFrame
+		expected DataFrame
+	}{
+		{
+			name: "Transpose with all string columns",
+			input: New(
+				series.New([]string{"A", "B", "C"}, series.String, "Col1"),
+				series.New([]string{"1", "2", "3"}, series.String, "Col2"),
+				series.New([]string{"1.1", "2.2", "3.3"}, series.String, "Col3"),
+			),
+			expected: New(
+				series.New([]string{"Col1", "Col2", "Col3"}, series.String, ""),
+				series.New([]string{"A", "1", "1.1"}, series.String, "1"),
+				series.New([]string{"B", "2", "2.2"}, series.String, "2"),
+				series.New([]string{"C", "3", "3.3"}, series.String, "3"),
+			),
+		},
+		{
+			name: "Transpose with all int columns",
+			input: New(
+				series.New([]int{1, 2, 3}, series.Int, "Col1"),
+				series.New([]int{4, 5, 6}, series.Int, "Col2"),
+				series.New([]int{7, 8, 9}, series.Int, "Col3"),
+			),
+			expected: New(
+				series.New([]string{"Col1", "Col2", "Col3"}, series.String, ""),
+				series.New([]int{1, 4, 7}, series.Int, "1"),
+				series.New([]int{2, 5, 8}, series.Int, "2"),
+				series.New([]int{3, 6, 9}, series.Int, "3"),
+			),
+		},
+		{
+			name: "Transpose with all float columns",
+			input: New(
+				series.New([]float64{1.1, 2.2, 3.3}, series.Float, "Col1"),
+				series.New([]float64{4.4, 5.5, 6.6}, series.Float, "Col2"),
+				series.New([]float64{7.7, 8.8, 9.9}, series.Float, "Col3"),
+			),
+			expected: New(
+				series.New([]string{"Col1", "Col2", "Col3"}, series.String, ""),
+				series.New([]float64{1.1, 4.4, 7.7}, series.Float, "1"),
+				series.New([]float64{2.2, 5.5, 8.8}, series.Float, "2"),
+				series.New([]float64{3.3, 6.6, 9.9}, series.Float, "3"),
+			),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.input.Transpose()
+
+			if result.Err != nil {
+				t.Errorf("Unexpected error: %v", result.Err)
+			}
+
+			if !reflect.DeepEqual(result.Names(), tt.expected.Names()) {
+				t.Errorf("Column names mismatch.\nExpected: %v\nGot: %v", tt.expected.Names(), result.Names())
+			}
+
+			if !reflect.DeepEqual(result.Types(), tt.expected.Types()) {
+				t.Errorf("Column types mismatch.\nExpected: %v\nGot: %v", tt.expected.Types(), result.Types())
+			}
+
+			if !reflect.DeepEqual(result.Records(), tt.expected.Records()) {
+				t.Errorf("Data mismatch.\nExpected:\n%v\nGot:\n%v", tt.expected.Records(), result.Records())
+			}
+		})
+	}
 }
