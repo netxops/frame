@@ -1,6 +1,6 @@
 module github.com/netxops/frame
 
-go 1.18
+go 1.23
 
 require (
 	github.com/spf13/cast v1.7.1
