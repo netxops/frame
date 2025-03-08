@@ -181,20 +181,28 @@ func createSeriesFromData(data []interface{}, name string) (series.Series, error
 
 	// Determine the type based on the first non-nil element
 	for _, v := range data {
-		if v != nil {
-			switch reflect.TypeOf(v).Kind() {
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-				reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-				t = series.Int
-			case reflect.Float32, reflect.Float64:
-				t = series.Float
-			case reflect.Bool:
-				t = series.Bool
-			default:
-				t = series.String
-			}
-			break
+		if v == nil {
+			continue
 		}
+		rv := reflect.ValueOf(v)
+		if rv.Kind() == reflect.Ptr {
+			if rv.IsNil() {
+				continue
+			}
+			rv = rv.Elem()
+		}
+		switch rv.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			t = series.Int
+		case reflect.Float32, reflect.Float64:
+			t = series.Float
+		case reflect.Bool:
+			t = series.Bool
+		default:
+			t = series.String
+		}
+		break
 	}
 
 	for i, v := range data {
@@ -202,41 +210,45 @@ func createSeriesFromData(data []interface{}, name string) (series.Series, error
 			newData[i] = nil
 			continue
 		}
+		rv := reflect.ValueOf(v)
+		if rv.Kind() == reflect.Ptr {
+			if rv.IsNil() {
+				newData[i] = nil
+				continue
+			}
+			rv = rv.Elem()
+		}
 
 		switch t {
 		case series.Int:
-			switch reflect.TypeOf(v).Kind() {
+			switch rv.Kind() {
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				newData[i] = int(reflect.ValueOf(v).Int())
+				newData[i] = int(rv.Int())
 			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-				newData[i] = int(reflect.ValueOf(v).Uint())
+				newData[i] = int(rv.Uint())
 			default:
-				// If the value is not an integer type, set it to nil
 				newData[i] = nil
 			}
 		case series.Float:
-			if floatVal, ok := v.(float64); ok {
-				newData[i] = floatVal
-			} else if floatVal, ok := v.(float32); ok {
-				newData[i] = float64(floatVal)
+			if rv.Kind() == reflect.Float64 {
+				newData[i] = rv.Float()
+			} else if rv.Kind() == reflect.Float32 {
+				newData[i] = float64(rv.Float())
 			} else {
-				// If the value is not a float64 or float32, set it to nil
 				newData[i] = nil
 			}
 		case series.Bool:
-			if boolVal, ok := v.(bool); ok {
-				newData[i] = boolVal
+			if rv.Kind() == reflect.Bool {
+				newData[i] = rv.Bool()
 			} else {
-				// If the value is not a bool, set it to nil
 				newData[i] = nil
 			}
 		default:
-			// For string and other types
-			switch reflect.TypeOf(v).Kind() {
+			switch rv.Kind() {
 			case reflect.Struct, reflect.Map, reflect.Slice, reflect.Array:
-				newData[i] = toJSON(v)
+				newData[i] = toJSON(rv.Interface())
 			default:
-				newData[i] = fmt.Sprintf("%v", v)
+				newData[i] = fmt.Sprintf("%v", rv.Interface())
 			}
 		}
 	}

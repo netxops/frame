@@ -12,6 +12,126 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestCreateSeriesFromData(t *testing.T) {
+	t.Run("Integer pointers", func(t *testing.T) {
+		// Create integer pointers
+		i1, i2, i3 := 1, 2, 3
+		data := []interface{}{&i1, &i2, &i3}
+
+		s, err := createSeriesFromData(data, "int_pointers")
+
+		assert.NoError(t, err)
+		assert.Equal(t, series.Int, s.Type())
+		assert.Equal(t, "int_pointers", s.Name)
+		ints, _ := s.Int()
+		assert.Equal(t, []int{1, 2, 3}, ints)
+	})
+
+	t.Run("Float pointers", func(t *testing.T) {
+		// Create float pointers
+		f1, f2, f3 := 1.1, 2.2, 3.3
+		data := []interface{}{&f1, &f2, &f3}
+
+		s, err := createSeriesFromData(data, "float_pointers")
+
+		assert.NoError(t, err)
+		assert.Equal(t, series.Float, s.Type())
+		assert.Equal(t, "float_pointers", s.Name)
+		assert.Equal(t, []float64{1.1, 2.2, 3.3}, s.Float())
+	})
+
+	t.Run("Bool pointers", func(t *testing.T) {
+		// Create bool pointers
+		b1, b2, b3 := true, false, true
+		data := []interface{}{&b1, &b2, &b3}
+
+		s, err := createSeriesFromData(data, "bool_pointers")
+
+		assert.NoError(t, err)
+		assert.Equal(t, series.Bool, s.Type())
+		assert.Equal(t, "bool_pointers", s.Name)
+		bools, _ := s.Bool()
+		assert.Equal(t, []bool{true, false, true}, bools)
+	})
+
+	t.Run("String pointers", func(t *testing.T) {
+		// Create string pointers
+		s1, s2, s3 := "a", "b", "c"
+		data := []interface{}{&s1, &s2, &s3}
+
+		s, err := createSeriesFromData(data, "string_pointers")
+
+		assert.NoError(t, err)
+		assert.Equal(t, series.String, s.Type())
+		assert.Equal(t, "string_pointers", s.Name)
+		assert.Equal(t, []string{"a", "b", "c"}, s.Records())
+	})
+
+	t.Run("Mixed pointers and values", func(t *testing.T) {
+		// Mix of pointers and direct values
+		i1, f1, b1 := 1, 2.2, true
+		data := []interface{}{&i1, f1, &b1}
+
+		s, err := createSeriesFromData(data, "mixed_data")
+
+		assert.NoError(t, err)
+		// The type should be determined by the first non-nil element (int in this case)
+		assert.Equal(t, series.Int, s.Type())
+		assert.Equal(t, "mixed_data", s.Name)
+		// Non-int values should be nil
+		expectedData := []string{"1", "NaN", "NaN"}
+		assert.Equal(t, expectedData, s.Records())
+	})
+
+	t.Run("Nil pointers", func(t *testing.T) {
+		// Create a slice with some nil pointers
+		var ip *int = nil
+		i1 := 42
+		data := []interface{}{ip, &i1, nil}
+
+		s, err := createSeriesFromData(data, "nil_pointers")
+
+		assert.NoError(t, err)
+		assert.Equal(t, series.Int, s.Type())
+		assert.Equal(t, "nil_pointers", s.Name)
+		expectedData := []string{"NaN", "42", "NaN"}
+		assert.Equal(t, expectedData, s.Records())
+	})
+
+	t.Run("Struct pointers", func(t *testing.T) {
+		// Create struct and struct pointers
+		type TestStruct struct {
+			Field1 string
+			Field2 int
+		}
+
+		s1 := TestStruct{Field1: "test1", Field2: 1}
+		s2 := TestStruct{Field1: "test2", Field2: 2}
+		data := []interface{}{&s1, s2}
+
+		s, err := createSeriesFromData(data, "struct_pointers")
+
+		assert.NoError(t, err)
+		assert.Equal(t, series.String, s.Type())
+		assert.Equal(t, "struct_pointers", s.Name)
+
+		// Both should be converted to JSON strings
+		records := s.Records()
+		assert.Len(t, records, 2)
+		assert.Contains(t, records[0], "test1")
+		assert.Contains(t, records[1], "test2")
+	})
+
+	t.Run("Empty data", func(t *testing.T) {
+		data := []interface{}{}
+
+		_, err := createSeriesFromData(data, "empty_data")
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "data is empty")
+	})
+}
+
 func TestGetValueByPathNestedStruct(t *testing.T) {
 	type Address struct {
 		Street string
