@@ -2,6 +2,8 @@ package utils
 
 import (
 	"fmt"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,45 +11,6 @@ import (
 	"github.com/netxops/frame/series"
 	"github.com/stretchr/testify/assert"
 )
-
-// func TestGetValueByPath(t *testing.T) {
-// 	type Address struct {
-// 		Street  string
-// 		City    string
-// 		Country string
-// 	}
-
-// 	type Person struct {
-// 		Name    string
-// 		Age     int
-// 		Address Address
-// 		Scores  []int
-// 	}
-
-// 	testData := Person{
-// 		Name: "Alice",
-// 		Age:  30,
-// 		Address: Address{
-// 			Street:  "123 Main St",
-// 			City:    "New York",
-// 			Country: "USA",
-// 		},
-// 		Scores: []int{85, 90, 95},
-// 	}
-
-// 	tests := []struct {
-// 		name     string
-// 		data     interface{}
-// 		path     string
-// 		expected interface{}
-// 		wantErr  bool
-// 	}{}
-
-// 	for _, tt := range tests {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 		})
-// 	}
-// }
 
 func TestGetValueByPathNestedStruct(t *testing.T) {
 	type Address struct {
@@ -1216,6 +1179,150 @@ func TestMapToDataFrame(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, tc.expected.Names(), result.Names())
 				assert.Equal(t, tc.expected.Records(), result.Records())
+			}
+		})
+	}
+}
+
+func TestDeepSliceToDataFrame(t *testing.T) {
+	tests := []struct {
+		name           string
+		data           interface{}
+		topColumnPath  string
+		slicePath      string
+		strictMode     bool
+		paths          []string
+		expectedDF     dataframe.DataFrame
+		expectedErrMsg string
+	}{
+		{
+			name: "Valid deep slice",
+			data: []map[string]interface{}{
+				{
+					"id": 1,
+					"items": []map[string]interface{}{
+						{"name": "Item1", "price": 10.5},
+						{"name": "Item2", "price": 20.0},
+					},
+				},
+				{
+					"id": 2,
+					"items": []map[string]interface{}{
+						{"name": "Item3", "price": 15.0},
+					},
+				},
+			},
+			topColumnPath: "id",
+			slicePath:     "items",
+			strictMode:    true,
+			paths:         []string{"name", "price"},
+			expectedDF: dataframe.New(
+				series.New([]int{1, 1, 2}, series.String, "id"),
+				series.New([]string{"Item1", "Item2", "Item3"}, series.String, "name"),
+				series.New([]float64{10.5, 20.0, 15.0}, series.Float, "price"),
+			),
+			expectedErrMsg: "",
+		},
+		{
+			name: "Empty deep slice",
+			data: []map[string]interface{}{
+				{
+					"id":    1,
+					"items": []map[string]interface{}{},
+				},
+				{
+					"id":    2,
+					"items": []map[string]interface{}{},
+				},
+			},
+			topColumnPath: "id",
+			slicePath:     "items",
+			strictMode:    true,
+			paths:         []string{"name", "price"},
+			expectedDF: dataframe.New(
+				series.New([]int{}, series.String, "id"),
+				series.New([]string{}, series.String, "name"),
+				series.New([]float64{}, series.String, "price"),
+			),
+			expectedErrMsg: "",
+		},
+		{
+			name:           "Invalid input - not a slice",
+			data:           map[string]interface{}{"key": "value"},
+			topColumnPath:  "id",
+			slicePath:      "items",
+			strictMode:     true,
+			paths:          []string{"name", "price"},
+			expectedDF:     dataframe.New(),
+			expectedErrMsg: "input must be a slice",
+		},
+		{
+			name: "Missing top column in strict mode",
+			data: []map[string]interface{}{
+				{
+					"items": []map[string]interface{}{
+						{"name": "Item1", "price": 10.5},
+					},
+				},
+			},
+			topColumnPath:  "id",
+			slicePath:      "items",
+			strictMode:     true,
+			paths:          []string{"name", "price"},
+			expectedDF:     dataframe.New(),
+			expectedErrMsg: "error extracting top column value at index 0",
+		},
+		{
+			name: "Missing deep slice in strict mode",
+			data: []map[string]interface{}{
+				{
+					"id": 1,
+				},
+			},
+			topColumnPath:  "id",
+			slicePath:      "items",
+			strictMode:     true,
+			paths:          []string{"name", "price"},
+			expectedDF:     dataframe.New(),
+			expectedErrMsg: "error extracting deep slice at index 0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			df, err := DeepSliceToDataFrame(tt.data, tt.topColumnPath, tt.slicePath, tt.strictMode, tt.paths...)
+
+			if tt.expectedErrMsg != "" {
+				if err == nil {
+					t.Errorf("Expected error containing '%s', but got nil", tt.expectedErrMsg)
+				} else if !strings.Contains(err.Error(), tt.expectedErrMsg) {
+					t.Errorf("Expected error containing '%s', but got '%s'", tt.expectedErrMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+
+				if !reflect.DeepEqual(df.Names(), tt.expectedDF.Names()) {
+					t.Errorf("Column names mismatch.\nExpected: %v\nGot: %v", tt.expectedDF.Names(), df.Names())
+				}
+
+				if !reflect.DeepEqual(df.Types(), tt.expectedDF.Types()) {
+					t.Errorf("Column types mismatch.\nExpected: %v\nGot: %v", tt.expectedDF.Types(), df.Types())
+				}
+
+				if df.Nrow() != tt.expectedDF.Nrow() {
+					t.Errorf("Row count mismatch.\nExpected: %d\nGot: %d", tt.expectedDF.Nrow(), df.Nrow())
+				}
+
+				for _, colName := range df.Names() {
+					expectedCol := tt.expectedDF.Col(colName)
+					actualCol := df.Col(colName)
+
+					if !reflect.DeepEqual(expectedCol.Records(), actualCol.Records()) {
+						t.Errorf("Column %s data mismatch.\nExpected: %v\nGot: %v", colName, expectedCol.Records(), actualCol.Records())
+					}
+				}
 			}
 		})
 	}

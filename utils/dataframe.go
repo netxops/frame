@@ -93,6 +93,66 @@ func FlexibleToDataFrame(data interface{}, strictMode bool, paths ...string) (da
 	return df, df.Error()
 }
 
+func DeepSliceToDataFrame(data interface{}, topColumnPath string, slicePath string, strictMode bool, paths ...string) (dataframe.DataFrame, error) {
+	v := reflect.ValueOf(data)
+	if v.Kind() != reflect.Slice {
+		return dataframe.New(), fmt.Errorf("input must be a slice")
+	}
+
+	var resultDF dataframe.DataFrame
+	topColumnValues := make([]interface{}, 0)
+	allDeepSliceData := make([]interface{}, 0)
+
+	for i := 0; i < v.Len(); i++ {
+		elem := v.Index(i).Interface()
+
+		// Extract top column value
+		topColumnValue, err := GetValueByPath(elem, topColumnPath)
+		if err != nil {
+			if strictMode {
+				return dataframe.New(), fmt.Errorf("error extracting top column value at index %d: %v", i, err)
+			}
+			topColumnValue = nil
+		}
+
+		// Extract deep slice
+		deepSliceValue, err := GetValueByPath(elem, slicePath)
+		if err != nil {
+			if strictMode {
+				return dataframe.New(), fmt.Errorf("error extracting deep slice at index %d: %v", i, err)
+			}
+			continue
+		}
+
+		deepSlice := reflect.ValueOf(deepSliceValue)
+		if deepSlice.Kind() != reflect.Slice {
+			return dataframe.New(), fmt.Errorf("value at slicePath must be a slice")
+		}
+
+		// Process each item in the deep slice
+		for j := 0; j < deepSlice.Len(); j++ {
+			topColumnValues = append(topColumnValues, topColumnValue)
+			allDeepSliceData = append(allDeepSliceData, deepSlice.Index(j).Interface())
+		}
+	}
+
+	// Create DataFrame for deep slice data using FlexibleToDataFrame
+	deepSliceDF, err := FlexibleToDataFrame(allDeepSliceData, strictMode, paths...)
+	if err != nil {
+		return dataframe.New(), fmt.Errorf("error creating DataFrame from deep slice data: %v", err)
+	}
+
+	// Add top column to the DataFrame
+	topColumnSeries := series.New(topColumnValues, series.String, topColumnPath)
+	resultDF = deepSliceDF.Mutate(topColumnSeries)
+
+	// Reorder columns to put top column first
+	newOrder := append([]string{topColumnPath}, deepSliceDF.Names()...)
+	resultDF = resultDF.Select(newOrder)
+
+	return resultDF, resultDF.Error()
+}
+
 func createSeriesFromPath(v reflect.Value, path string, strictMode bool) (series.Series, error) {
 	data := make([]interface{}, v.Len())
 	var err error
