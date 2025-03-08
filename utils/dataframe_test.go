@@ -1286,6 +1286,94 @@ func TestDeepSliceToDataFrame(t *testing.T) {
 			expectedDF:     dataframe.New(),
 			expectedErrMsg: "error extracting deep slice at index 0",
 		},
+
+		{
+			name: "Some empty deep slices",
+			data: []map[string]interface{}{
+				{
+					"id": 1,
+					"items": []map[string]interface{}{
+						{"name": "Item1", "price": 10.5},
+						{"name": "Item2", "price": 20.0},
+					},
+				},
+				{
+					"id":    2,
+					"items": []map[string]interface{}{},
+				},
+				{
+					"id": 3,
+					"items": []map[string]interface{}{
+						{"name": "Item3", "price": 15.0},
+					},
+				},
+			},
+			topColumnPath: "id",
+			slicePath:     "items",
+			strictMode:    false,
+			paths:         []string{"name", "price"},
+			expectedDF: dataframe.New(
+				series.New([]int{1, 1, 3}, series.String, "id"),
+				series.New([]string{"Item1", "Item2", "Item3"}, series.String, "name"),
+				series.New([]float64{10.5, 20.0, 15.0}, series.Float, "price"),
+			),
+			expectedErrMsg: "",
+		},
+		{
+			name: "All empty deep slices",
+			data: []map[string]interface{}{
+				{
+					"id":    1,
+					"items": []map[string]interface{}{},
+				},
+				{
+					"id":    2,
+					"items": []map[string]interface{}{},
+				},
+				{
+					"id":    3,
+					"items": []map[string]interface{}{},
+				},
+			},
+			topColumnPath: "id",
+			slicePath:     "items",
+			strictMode:    false,
+			paths:         []string{"name", "price"},
+			expectedDF: dataframe.New(
+				series.New([]int{}, series.String, "id"),
+				series.New([]string{}, series.String, "name"),
+				series.New([]float64{}, series.String, "price"),
+			),
+			expectedErrMsg: "",
+		},
+		{
+			name: "Mixed deep slices with some empty and some missing",
+			data: []map[string]interface{}{
+				{
+					"id": 1,
+					"items": []map[string]interface{}{
+						{"name": "Item1", "price": 10.5},
+					},
+				},
+				{
+					"id":    2,
+					"items": []map[string]interface{}{},
+				},
+				{
+					"id": 3,
+				},
+			},
+			topColumnPath: "id",
+			slicePath:     "items",
+			strictMode:    false,
+			paths:         []string{"name", "price"},
+			expectedDF: dataframe.New(
+				series.New([]int{1}, series.String, "id"),
+				series.New([]string{"Item1"}, series.String, "name"),
+				series.New([]float64{10.5}, series.Float, "price"),
+			),
+			expectedErrMsg: "",
+		},
 	}
 
 	for _, tt := range tests {
