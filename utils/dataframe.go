@@ -153,66 +153,76 @@ func DeepSliceToDataFrame(data interface{}, topColumnPath string, slicePath stri
 	return resultDF, resultDF.Error()
 }
 func DataframeToStruct[T any](df dataframe.DataFrame) ([]T, error) {
-	var result []T
+    var result []T
 
-	// Get the type of T
-	t := reflect.TypeOf((*T)(nil)).Elem()
+    // Get the type of T
+    t := reflect.TypeOf((*T)(nil)).Elem()
 
-	// Check if T is a struct
-	if t.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("T must be a struct type")
-	}
+    // Check if T is a struct
+    if t.Kind() != reflect.Struct {
+        return nil, fmt.Errorf("T must be a struct type")
+    }
 
-	// Create a map of JSON tag to field index
-	tagToField := make(map[string]int)
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		tag := field.Tag.Get("json")
-		if tag != "" {
-			tagParts := strings.Split(tag, ",")
-			tagToField[tagParts[0]] = i
-		}
-	}
+    // Create a map of JSON tag to field index and track required fields
+    tagToField := make(map[string]int)
+    requiredFields := make(map[string]bool)
+    for i := 0; i < t.NumField(); i++ {
+        field := t.Field(i)
+        tag := field.Tag.Get("json")
+        if tag != "" {
+            tagParts := strings.Split(tag, ",")
+            tagToField[tagParts[0]] = i
+            if field.Tag.Get("required") == "true" {
+                requiredFields[tagParts[0]] = true
+            }
+        }
+    }
 
-	// Get DataFrame column names
-	dfColumns := df.Names()
+    // Get DataFrame column names
+    dfColumns := df.Names()
 
-	// Iterate over each row in the DataFrame
-	for i := 0; i < df.Nrow(); i++ {
-		// Create a new instance of T
-		newStruct := reflect.New(t).Elem()
+    // Iterate over each row in the DataFrame
+    for i := 0; i < df.Nrow(); i++ {
+        // Create a new instance of T
+        newStruct := reflect.New(t).Elem()
 
-		// Get the row data
-		row, _ := df.Row(i)
+        // Get the row data
+        _, row := df.Row(i)
 
-		// Iterate over each JSON tag
-		for tag, fieldIndex := range tagToField {
-			// Check if the column exists in the DataFrame
-			if !contains(dfColumns, tag) {
-				continue // Skip this field if it's not in the DataFrame
-			}
+        missingRequiredFields := []string{}
 
-			// Get the value from the DataFrame row
-			value, ok := row[tag]
-			if !ok {
-				continue // Skip this field if it's not in the row data
-			}
+        // Iterate over each JSON tag
+        for tag, fieldIndex := range tagToField {
+            // Check if the column exists in the DataFrame
+            if !contains(dfColumns, tag) {
+                if requiredFields[tag] {
+                    missingRequiredFields = append(missingRequiredFields, tag)
+                }
+                continue // Skip this field if it's not in the DataFrame
+            }
 
-			// Set the value in the struct field
-			structField := newStruct.Field(fieldIndex)
-			if structField.CanSet() {
-				err := setField(structField, value)
-				if err != nil {
-					return nil, fmt.Errorf("error setting field for tag '%s': %v", tag, err)
-				}
-			}
-		}
+            // Get the value from the DataFrame row
+            value := row[tag]
 
-		// Append the new struct to the result slice
-		result = append(result, newStruct.Interface().(T))
-	}
+            // Set the value in the struct field
+            structField := newStruct.Field(fieldIndex)
+            if structField.CanSet() {
+                err := setField(structField, value)
+                if err != nil {
+                    return nil, fmt.Errorf("error setting field for tag '%s' at row %d: %v", tag, i, err)
+                }
+            }
+        }
 
-	return result, nil
+        if len(missingRequiredFields) > 0 {
+            return nil, fmt.Errorf("missing required fields at row %d: %v", i, missingRequiredFields)
+        }
+
+        // Append the new struct to the result slice
+        result = append(result, newStruct.Interface().(T))
+    }
+
+    return result, nil
 }
 
 // Helper function to set a struct field value
