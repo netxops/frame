@@ -1535,3 +1535,117 @@ func TestDeepSliceToDataFrame(t *testing.T) {
 		})
 	}
 }
+
+func TestDataframeToStruct(t *testing.T) {
+	type TestStruct struct {
+		Name       string   `json:"name"`
+		Age        int      `json:"age"`
+		Score      float64  `json:"score"`
+		IsActive   bool     `json:"is_active"`
+		Tags       []string `json:"tags"`
+		ExtraField string   `json:"extra_field"`
+	}
+
+	tests := []struct {
+		name     string
+		df       dataframe.DataFrame
+		expected []TestStruct
+		wantErr  bool
+	}{
+		{
+			name: "Successful conversion with exact types",
+			df: dataframe.New(
+				series.New([]string{"Alice", "Bob"}, series.String, "name"),
+				series.New([]int{25, 30}, series.Int, "age"),
+				series.New([]float64{95.5, 88.0}, series.Float, "score"),
+				series.New([]bool{true, false}, series.Bool, "is_active"),
+			),
+			expected: []TestStruct{
+				{Name: "Alice", Age: 25, Score: 95.5, IsActive: true},
+				{Name: "Bob", Age: 30, Score: 88.0, IsActive: false},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Successful conversion with type conversion",
+			df: dataframe.New(
+				series.New([]string{"Charlie", "David"}, series.String, "name"),
+				series.New([]string{"35", "40"}, series.String, "age"),
+				series.New([]int{90, 85}, series.Int, "score"),
+				series.New([]int{1, 0}, series.Int, "is_active"),
+			),
+			expected: []TestStruct{
+				{Name: "Charlie", Age: 35, Score: 90, IsActive: true},
+				{Name: "David", Age: 40, Score: 85, IsActive: false},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Successful conversion with missing optional fields",
+			df: dataframe.New(
+				series.New([]string{"Eve", "Frank"}, series.String, "name"),
+				series.New([]int{28, 32}, series.Int, "age"),
+				series.New([]float64{92.5, 87.5}, series.Float, "score"),
+			),
+			expected: []TestStruct{
+				{Name: "Eve", Age: 28, Score: 92.5},
+				{Name: "Frank", Age: 32, Score: 87.5},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Successful conversion with extra fields in DataFrame",
+			df: dataframe.New(
+				series.New([]string{"Grace", "Henry"}, series.String, "name"),
+				series.New([]int{29, 33}, series.Int, "age"),
+				series.New([]float64{93.5, 86.5}, series.Float, "score"),
+				series.New([]string{"extra1", "extra2"}, series.String, "extra_column"),
+			),
+			expected: []TestStruct{
+				{Name: "Grace", Age: 29, Score: 93.5},
+				{Name: "Henry", Age: 33, Score: 86.5},
+			},
+			wantErr: false,
+		},
+		// 当前不支持对于字段内容进行反序列化
+		// {
+		// 	name: "Successful conversion with slice type",
+		// 	df: dataframe.New(
+		// 		series.New([]string{"Mia", "Noah"}, series.String, "name"),
+		// 		series.New([]int{27, 31}, series.Int, "age"),
+		// 		series.New([]float64{94.5, 88.5}, series.Float, "score"),
+		// 		series.New([]string{`["tag1","tag2"]`, `["tag3","tag4"]`}, series.String, "tags"),
+		// 	),
+		// 	expected: []TestStruct{
+		// 		{Name: "Mia", Age: 27, Score: 94.5, Tags: []string{"tag1", "tag2"}},
+		// 		{Name: "Noah", Age: 31, Score: 88.5, Tags: []string{"tag3", "tag4"}},
+		// 	},
+		// 	wantErr: false,
+		// },
+		{
+			name: "Successful conversion with struct fields not in DataFrame",
+			df: dataframe.New(
+				series.New([]string{"Oliver", "Penny"}, series.String, "name"),
+				series.New([]int{36, 29}, series.Int, "age"),
+			),
+			expected: []TestStruct{
+				{Name: "Oliver", Age: 36},
+				{Name: "Penny", Age: 29},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := DataframeToStruct[TestStruct](tt.df)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, result)
+			}
+		})
+	}
+}

@@ -152,6 +152,115 @@ func DeepSliceToDataFrame(data interface{}, topColumnPath string, slicePath stri
 
 	return resultDF, resultDF.Error()
 }
+func DataframeToStruct[T any](df dataframe.DataFrame) ([]T, error) {
+	var result []T
+
+	// Get the type of T
+	t := reflect.TypeOf((*T)(nil)).Elem()
+
+	// Check if T is a struct
+	if t.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("T must be a struct type")
+	}
+
+	// Create a map of JSON tag to field index
+	tagToField := make(map[string]int)
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		tag := field.Tag.Get("json")
+		if tag != "" {
+			tagParts := strings.Split(tag, ",")
+			tagToField[tagParts[0]] = i
+		}
+	}
+
+	// Get DataFrame column names
+	dfColumns := df.Names()
+
+	// Iterate over each row in the DataFrame
+	for i := 0; i < df.Nrow(); i++ {
+		// Create a new instance of T
+		newStruct := reflect.New(t).Elem()
+
+		// Get the row data
+		row, _ := df.Row(i)
+
+		// Iterate over each JSON tag
+		for tag, fieldIndex := range tagToField {
+			// Check if the column exists in the DataFrame
+			if !contains(dfColumns, tag) {
+				continue // Skip this field if it's not in the DataFrame
+			}
+
+			// Get the value from the DataFrame row
+			value, ok := row[tag]
+			if !ok {
+				continue // Skip this field if it's not in the row data
+			}
+
+			// Set the value in the struct field
+			structField := newStruct.Field(fieldIndex)
+			if structField.CanSet() {
+				err := setField(structField, value)
+				if err != nil {
+					return nil, fmt.Errorf("error setting field for tag '%s': %v", tag, err)
+				}
+			}
+		}
+
+		// Append the new struct to the result slice
+		result = append(result, newStruct.Interface().(T))
+	}
+
+	return result, nil
+}
+
+// Helper function to set a struct field value
+func setField(field reflect.Value, value interface{}) error {
+	if value == nil {
+		return nil // Skip nil values
+	}
+
+	v := reflect.ValueOf(value)
+
+	// Handle type conversions
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString(fmt.Sprintf("%v", value))
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		intVal, err := strconv.ParseInt(fmt.Sprintf("%v", value), 10, 64)
+		if err != nil {
+			return err
+		}
+		field.SetInt(intVal)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		uintVal, err := strconv.ParseUint(fmt.Sprintf("%v", value), 10, 64)
+		if err != nil {
+			return err
+		}
+		field.SetUint(uintVal)
+	case reflect.Float32, reflect.Float64:
+		floatVal, err := strconv.ParseFloat(fmt.Sprintf("%v", value), 64)
+		if err != nil {
+			return err
+		}
+		field.SetFloat(floatVal)
+	case reflect.Bool:
+		boolVal, err := strconv.ParseBool(fmt.Sprintf("%v", value))
+		if err != nil {
+			return err
+		}
+		field.SetBool(boolVal)
+	default:
+		if field.Type() == v.Type() {
+			field.Set(v)
+		} else {
+			return fmt.Errorf("incompatible types: %v and %v", field.Type(), v.Type())
+		}
+	}
+
+	return nil
+}
 
 func createSeriesFromPath(v reflect.Value, path string, strictMode bool) (series.Series, error) {
 	data := make([]interface{}, v.Len())
@@ -366,4 +475,14 @@ func GetValueByPath(data interface{}, path string) (interface{}, error) {
 	}
 
 	return v.Interface(), nil
+}
+
+// Helper function to check if a slice contains a string
+func contains(slice []string, str string) bool {
+	for _, v := range slice {
+		if v == str {
+			return true
+		}
+	}
+	return false
 }
