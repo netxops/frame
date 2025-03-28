@@ -1761,6 +1761,49 @@ func TestDeepSliceToSlice(t *testing.T) {
 			},
 			expectErr: false,
 		},
+		{
+			name: "Empty paths - return entire slice",
+			data: []map[string]interface{}{
+				{
+					"deepSlice": []TestStruct{
+						{X: 1, Y: "a"},
+						{X: 2, Y: "b"},
+					},
+				},
+				{
+					"deepSlice": []TestStruct{
+						{X: 3, Y: "c"},
+					},
+				},
+			},
+			element:    TestStruct{},
+			slicePath:  "deepSlice",
+			strictMode: true,
+			paths:      []string{}, // Empty paths
+			expected: []TestStruct{
+				{X: 1, Y: "a"},
+				{X: 2, Y: "b"},
+				{X: 3, Y: "c"},
+			},
+			expectErr: false,
+		},
+		{
+			name: "Empty paths with mixed types - should fail",
+			data: []map[string]interface{}{
+				{
+					"deepSlice": []interface{}{
+						TestStruct{X: 1, Y: "a"},
+						map[string]interface{}{"X": 2, "Y": "b"},
+					},
+				},
+			},
+			element:    TestStruct{},
+			slicePath:  "deepSlice",
+			strictMode: true,
+			paths:      []string{}, // Empty paths
+			expected:   nil,
+			expectErr:  true,
+		},
 	}
 
 	for _, tt := range tests {
