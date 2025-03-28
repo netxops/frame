@@ -1625,3 +1625,154 @@ func TestDataframeToStruct(t *testing.T) {
 		})
 	}
 }
+
+func TestDeepSliceToSlice(t *testing.T) {
+	type TestStruct struct {
+		X int
+		Y string
+	}
+
+	tests := []struct {
+		name       string
+		data       interface{}
+		element    TestStruct
+		slicePath  string
+		strictMode bool
+		paths      []string
+		expected   []TestStruct
+		expectErr  bool
+	}{
+		{
+			name: "Valid nested slice",
+			data: []map[string]interface{}{
+				{
+					"deepSlice": []map[string]interface{}{
+						{"X": 1, "Y": "a"},
+						{"X": 2, "Y": "b"},
+					},
+				},
+				{
+					"deepSlice": []map[string]interface{}{
+						{"X": 3, "Y": "c"},
+						{"X": 4, "Y": "d"},
+					},
+				},
+			},
+			element:    TestStruct{},
+			slicePath:  "deepSlice",
+			strictMode: true,
+			paths:      []string{"X", "Y"},
+			expected: []TestStruct{
+				{X: 1, Y: "a"},
+				{X: 2, Y: "b"},
+				{X: 3, Y: "c"},
+				{X: 4, Y: "d"},
+			},
+			expectErr: false,
+		},
+		{
+			name: "Empty nested slice",
+			data: []map[string]interface{}{
+				{"deepSlice": []map[string]interface{}{}},
+				{"deepSlice": []map[string]interface{}{}},
+			},
+			element:    TestStruct{},
+			slicePath:  "deepSlice",
+			strictMode: true,
+			paths:      []string{"X", "Y"},
+			expected:   []TestStruct{},
+			expectErr:  false,
+		},
+		{
+			name:       "Invalid input - not a slice",
+			data:       map[string]interface{}{"key": "value"},
+			element:    TestStruct{},
+			slicePath:  "deepSlice",
+			strictMode: true,
+			paths:      []string{"X", "Y"},
+			expected:   nil,
+			expectErr:  true,
+		},
+		{
+			name: "Missing deep slice in strict mode",
+			data: []map[string]interface{}{
+				{"otherKey": "value"},
+			},
+			element:    TestStruct{},
+			slicePath:  "deepSlice",
+			strictMode: true,
+			paths:      []string{"X", "Y"},
+			expected:   nil,
+			expectErr:  true,
+		},
+		{
+			name: "Missing deep slice in non-strict mode",
+			data: []map[string]interface{}{
+				{"otherKey": "value"},
+				{
+					"deepSlice": []map[string]interface{}{
+						{"X": 1, "Y": "a"},
+					},
+				},
+			},
+			element:    TestStruct{},
+			slicePath:  "deepSlice",
+			strictMode: false,
+			paths:      []string{"X", "Y"},
+			expected: []TestStruct{
+				{X: 1, Y: "a"},
+			},
+			expectErr: false,
+		},
+		{
+			name: "Missing field in strict mode",
+			data: []map[string]interface{}{
+				{
+					"deepSlice": []map[string]interface{}{
+						{"X": 1},
+						{"Y": "b"},
+					},
+				},
+			},
+			element:    TestStruct{},
+			slicePath:  "deepSlice",
+			strictMode: true,
+			paths:      []string{"X", "Y"},
+			expected:   nil,
+			expectErr:  true,
+		},
+		{
+			name: "Missing field in non-strict mode",
+			data: []map[string]interface{}{
+				{
+					"deepSlice": []map[string]interface{}{
+						{"X": 1},
+						{"Y": "b"},
+					},
+				},
+			},
+			element:    TestStruct{},
+			slicePath:  "deepSlice",
+			strictMode: false,
+			paths:      []string{"X", "Y"},
+			expected: []TestStruct{
+				{X: 1, Y: ""},
+				{X: 0, Y: "b"},
+			},
+			expectErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := DeepSliceToSlice(tt.data, tt.element, tt.slicePath, tt.strictMode, tt.paths...)
+
+			if tt.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, result)
+			}
+		})
+	}
+}

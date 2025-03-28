@@ -115,7 +115,7 @@ func MapToDataFrame(data interface{}, topColumn string, strictMode bool, paths .
 // | Bob   | 25  | 456 Elm St    | Chicago   |
 // +-------+-----+---------------+-----------+
 
-//    3  | "c" | true
+// 3  | "c" | true
 func FlexibleToDataFrame(data interface{}, strictMode bool, paths ...string) (dataframe.DataFrame, error) {
 	var df dataframe.DataFrame
 	v := reflect.ValueOf(data)
@@ -253,6 +253,119 @@ func DeepSliceToDataFrame(data interface{}, topColumnPath string, slicePath stri
 
 	return resultDF, resultDF.Error()
 }
+
+// func DeepSliceToSlice[T any](data interface{}, element T, slicePath string, strictMode bool, paths ...string) ([]T, error) {
+// 	v := reflect.ValueOf(data)
+// 	if v.Kind() != reflect.Slice {
+// 		return nil, fmt.Errorf("input must be a slice")
+// 	}
+
+// 	var result []T
+
+// 	for i := 0; i < v.Len(); i++ {
+// 		elem := v.Index(i).Interface()
+
+// 		// Extract deep slice
+// 		deepSliceValue, err := GetValueByPath(elem, slicePath)
+// 		if err != nil {
+// 			if strictMode {
+// 				return nil, fmt.Errorf("error extracting deep slice at index %d: %v", i, err)
+// 			}
+// 			continue
+// 		}
+
+// 		deepSlice := reflect.ValueOf(deepSliceValue)
+// 		if deepSlice.Kind() != reflect.Slice {
+// 			return nil, fmt.Errorf("value at slicePath must be a slice")
+// 		}
+
+// 		// Process each item in the deep slice
+// 		for j := 0; j < deepSlice.Len(); j++ {
+// 			item := deepSlice.Index(j).Interface()
+// 			newElement := reflect.New(reflect.TypeOf(element)).Elem()
+
+// 			// Extract values for each path
+// 			for _, path := range paths {
+// 				value, err := GetValueByPath(item, path)
+// 				if err != nil {
+// 					if strictMode {
+// 						return nil, fmt.Errorf("error extracting value from path %s for element %d,%d: %v", path, i, j, err)
+// 					}
+// 					value = nil
+// 				}
+
+// 				field := newElement.FieldByName(path)
+// 				if field.IsValid() && field.CanSet() {
+// 					err := setField(field, value)
+// 					if err != nil {
+// 						return nil, fmt.Errorf("error setting field %s: %v", path, err)
+// 					}
+// 				}
+// 			}
+
+// 			result = append(result, newElement.Interface().(T))
+// 		}
+// 	}
+
+// 	return result, nil
+// }
+
+func DeepSliceToSlice[T any](data interface{}, element T, slicePath string, strictMode bool, paths ...string) ([]T, error) {
+	v := reflect.ValueOf(data)
+	if v.Kind() != reflect.Slice {
+		return nil, fmt.Errorf("input must be a slice")
+	}
+
+	result := make([]T, 0) // Initialize with an empty slice instead of nil
+
+	for i := 0; i < v.Len(); i++ {
+		elem := v.Index(i).Interface()
+
+		// Extract deep slice
+		deepSliceValue, err := GetValueByPath(elem, slicePath)
+		if err != nil {
+			if strictMode {
+				return nil, fmt.Errorf("error extracting deep slice at index %d: %v", i, err)
+			}
+			continue
+		}
+
+		deepSlice := reflect.ValueOf(deepSliceValue)
+		if deepSlice.Kind() != reflect.Slice {
+			return nil, fmt.Errorf("value at slicePath must be a slice")
+		}
+
+		// Process each item in the deep slice
+		for j := 0; j < deepSlice.Len(); j++ {
+			item := deepSlice.Index(j).Interface()
+			newElement := reflect.New(reflect.TypeOf(element)).Elem()
+
+			// Extract values for each path
+			for _, path := range paths {
+				value, err := GetValueByPath(item, path)
+				if err != nil {
+					if strictMode {
+						return nil, fmt.Errorf("error extracting value from path %s for element %d,%d: %v", path, i, j, err)
+					}
+					value = nil
+				}
+
+				field := newElement.FieldByName(path)
+				if field.IsValid() && field.CanSet() {
+					err := setField(field, value)
+					if err != nil {
+						return nil, fmt.Errorf("error setting field %s: %v", path, err)
+					}
+				}
+			}
+
+			result = append(result, newElement.Interface().(T))
+		}
+	}
+
+	return result, nil // Always return the slice, even if it's empty
+}
+
 func DataframeToStruct[T any](df dataframe.DataFrame) ([]T, error) {
 	var result []T
 
