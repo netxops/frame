@@ -12,6 +12,25 @@ import (
 	"github.com/netxops/frame/series"
 )
 
+// data := map[string]interface{}{
+//     "A": []map[string]interface{}{
+//         {"x": 1, "y": 2},
+//         {"x": 3, "y": 4},
+//     },
+//     "B": []map[string]interface{}{
+//         {"x": 5, "y": 6},
+//         {"x": 7, "y": 8},
+//     },
+// }
+// topColumn := "key"
+// paths := []string{"x", "y"}
+// 最终结果
+//  key | x | y
+//  A  | 1 | 2
+//  A  | 3 | 4
+//  B  | 5 | 6
+//  B  | 7 | 8
+
 func MapToDataFrame(data interface{}, topColumn string, strictMode bool, paths ...string) (dataframe.DataFrame, error) {
 	v := reflect.ValueOf(data)
 	if v.Kind() != reflect.Map {
@@ -57,6 +76,46 @@ func MapToDataFrame(data interface{}, topColumn string, strictMode bool, paths .
 	return resultDF, resultDF.Error()
 }
 
+// 输入数据 ([]Person):
+// [
+//   {
+//     Name: "Alice",
+//     Age: 30,
+//     Address: {
+//       Street: "123 Main St",
+//       City: "New York"
+//     }
+//   },
+//   {
+//     Name: "Bob",
+//     Age: 25,
+//     Address: {
+//       Street: "456 Elm St",
+//       City: "Chicago"
+//     }
+//   }
+// ]
+
+// paths: ["Name", "Age", "Address.Street", "Address.City"]
+
+//        |
+//        v
+
+// FlexibleToDataFrame 处理
+// (提取指定路径的数据并创建 DataFrame)
+
+//        |
+//        v
+
+// 输出 DataFrame:
+// +-------+-----+---------------+-----------+
+// | Name  | Age | Address.Street| Address.City |
+// +-------+-----+---------------+-----------+
+// | Alice | 30  | 123 Main St   | New York  |
+// | Bob   | 25  | 456 Elm St    | Chicago   |
+// +-------+-----+---------------+-----------+
+
+//    3  | "c" | true
 func FlexibleToDataFrame(data interface{}, strictMode bool, paths ...string) (dataframe.DataFrame, error) {
 	var df dataframe.DataFrame
 	v := reflect.ValueOf(data)
@@ -93,6 +152,48 @@ func FlexibleToDataFrame(data interface{}, strictMode bool, paths ...string) (da
 	return df, df.Error()
 }
 
+// Input Data (Nested Slice)
+//
+//	|
+//	v
+//
+// +------------------+
+// |  [                |
+// |    {              |
+// |      topColumn: A |
+// |      deepSlice: [ |
+// |        {x: 1, y: 2},
+// |        {x: 3, y: 4}
+// |      ]            |
+// |    },             |
+// |    {              |
+// |      topColumn: B |
+// |      deepSlice: [ |
+// |        {x: 5, y: 6},
+// |        {x: 7, y: 8}
+// |      ]            |
+// |    }              |
+// |  ]                |
+// +------------------+
+//
+//	|
+//	| DeepSliceToDataFrame
+//	v
+//
+// +------------------+
+// | DataFrame        |
+// |                  |
+// | topColumn | x | y |
+// |    A      | 1 | 2 |
+// |    A      | 3 | 4 |
+// |    B      | 5 | 6 |
+// |    B      | 7 | 8 |
+// +------------------+
+//
+// topColumnPath := "topColumn"
+// slicePath := "deepSlice"
+// strictMode := true
+// paths := []string{"x", "y"]
 func DeepSliceToDataFrame(data interface{}, topColumnPath string, slicePath string, strictMode bool, paths ...string) (dataframe.DataFrame, error) {
 	v := reflect.ValueOf(data)
 	if v.Kind() != reflect.Slice {
@@ -153,76 +254,76 @@ func DeepSliceToDataFrame(data interface{}, topColumnPath string, slicePath stri
 	return resultDF, resultDF.Error()
 }
 func DataframeToStruct[T any](df dataframe.DataFrame) ([]T, error) {
-    var result []T
+	var result []T
 
-    // Get the type of T
-    t := reflect.TypeOf((*T)(nil)).Elem()
+	// Get the type of T
+	t := reflect.TypeOf((*T)(nil)).Elem()
 
-    // Check if T is a struct
-    if t.Kind() != reflect.Struct {
-        return nil, fmt.Errorf("T must be a struct type")
-    }
+	// Check if T is a struct
+	if t.Kind() != reflect.Struct {
+		return nil, fmt.Errorf("T must be a struct type")
+	}
 
-    // Create a map of JSON tag to field index and track required fields
-    tagToField := make(map[string]int)
-    requiredFields := make(map[string]bool)
-    for i := 0; i < t.NumField(); i++ {
-        field := t.Field(i)
-        tag := field.Tag.Get("json")
-        if tag != "" {
-            tagParts := strings.Split(tag, ",")
-            tagToField[tagParts[0]] = i
-            if field.Tag.Get("required") == "true" {
-                requiredFields[tagParts[0]] = true
-            }
-        }
-    }
+	// Create a map of JSON tag to field index and track required fields
+	tagToField := make(map[string]int)
+	requiredFields := make(map[string]bool)
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		tag := field.Tag.Get("json")
+		if tag != "" {
+			tagParts := strings.Split(tag, ",")
+			tagToField[tagParts[0]] = i
+			if field.Tag.Get("required") == "true" {
+				requiredFields[tagParts[0]] = true
+			}
+		}
+	}
 
-    // Get DataFrame column names
-    dfColumns := df.Names()
+	// Get DataFrame column names
+	dfColumns := df.Names()
 
-    // Iterate over each row in the DataFrame
-    for i := 0; i < df.Nrow(); i++ {
-        // Create a new instance of T
-        newStruct := reflect.New(t).Elem()
+	// Iterate over each row in the DataFrame
+	for i := 0; i < df.Nrow(); i++ {
+		// Create a new instance of T
+		newStruct := reflect.New(t).Elem()
 
-        // Get the row data
-        _, row := df.Row(i)
+		// Get the row data
+		_, row := df.Row(i)
 
-        missingRequiredFields := []string{}
+		missingRequiredFields := []string{}
 
-        // Iterate over each JSON tag
-        for tag, fieldIndex := range tagToField {
-            // Check if the column exists in the DataFrame
-            if !contains(dfColumns, tag) {
-                if requiredFields[tag] {
-                    missingRequiredFields = append(missingRequiredFields, tag)
-                }
-                continue // Skip this field if it's not in the DataFrame
-            }
+		// Iterate over each JSON tag
+		for tag, fieldIndex := range tagToField {
+			// Check if the column exists in the DataFrame
+			if !contains(dfColumns, tag) {
+				if requiredFields[tag] {
+					missingRequiredFields = append(missingRequiredFields, tag)
+				}
+				continue // Skip this field if it's not in the DataFrame
+			}
 
-            // Get the value from the DataFrame row
-            value := row[tag]
+			// Get the value from the DataFrame row
+			value := row[tag]
 
-            // Set the value in the struct field
-            structField := newStruct.Field(fieldIndex)
-            if structField.CanSet() {
-                err := setField(structField, value)
-                if err != nil {
-                    return nil, fmt.Errorf("error setting field for tag '%s' at row %d: %v", tag, i, err)
-                }
-            }
-        }
+			// Set the value in the struct field
+			structField := newStruct.Field(fieldIndex)
+			if structField.CanSet() {
+				err := setField(structField, value)
+				if err != nil {
+					return nil, fmt.Errorf("error setting field for tag '%s' at row %d: %v", tag, i, err)
+				}
+			}
+		}
 
-        if len(missingRequiredFields) > 0 {
-            return nil, fmt.Errorf("missing required fields at row %d: %v", i, missingRequiredFields)
-        }
+		if len(missingRequiredFields) > 0 {
+			return nil, fmt.Errorf("missing required fields at row %d: %v", i, missingRequiredFields)
+		}
 
-        // Append the new struct to the result slice
-        result = append(result, newStruct.Interface().(T))
-    }
+		// Append the new struct to the result slice
+		result = append(result, newStruct.Interface().(T))
+	}
 
-    return result, nil
+	return result, nil
 }
 
 // Helper function to set a struct field value
