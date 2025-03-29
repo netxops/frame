@@ -254,127 +254,118 @@ func DeepSliceToDataFrame(data interface{}, topColumnPath string, slicePath stri
 	return resultDF, resultDF.Error()
 }
 
-// func DeepSliceToSlice[T any](data interface{}, element T, slicePath string, strictMode bool, paths ...string) ([]T, error) {
-// 	v := reflect.ValueOf(data)
-// 	if v.Kind() != reflect.Slice {
-// 		return nil, fmt.Errorf("input must be a slice")
-// 	}
-
-// 	var result []T
-
-// 	for i := 0; i < v.Len(); i++ {
-// 		elem := v.Index(i).Interface()
-
-// 		// Extract deep slice
-// 		deepSliceValue, err := GetValueByPath(elem, slicePath)
-// 		if err != nil {
-// 			if strictMode {
-// 				return nil, fmt.Errorf("error extracting deep slice at index %d: %v", i, err)
-// 			}
-// 			continue
-// 		}
-
-// 		deepSlice := reflect.ValueOf(deepSliceValue)
-// 		if deepSlice.Kind() != reflect.Slice {
-// 			return nil, fmt.Errorf("value at slicePath must be a slice")
-// 		}
-
-// 		// Process each item in the deep slice
-// 		for j := 0; j < deepSlice.Len(); j++ {
-// 			item := deepSlice.Index(j).Interface()
-// 			newElement := reflect.New(reflect.TypeOf(element)).Elem()
-
-// 			// Extract values for each path
-// 			for _, path := range paths {
-// 				value, err := GetValueByPath(item, path)
-// 				if err != nil {
-// 					if strictMode {
-// 						return nil, fmt.Errorf("error extracting value from path %s for element %d,%d: %v", path, i, j, err)
-// 					}
-// 					value = nil
-// 				}
-
-// 				field := newElement.FieldByName(path)
-// 				if field.IsValid() && field.CanSet() {
-// 					err := setField(field, value)
-// 					if err != nil {
-// 						return nil, fmt.Errorf("error setting field %s: %v", path, err)
-// 					}
-// 				}
-// 			}
-
-// 			result = append(result, newElement.Interface().(T))
-// 		}
-// 	}
-
-// 	return result, nil
-// }
 func DeepSliceToSlice[T any](data interface{}, element T, slicePath string, strictMode bool, paths ...string) ([]T, error) {
-    v := reflect.ValueOf(data)
-    if v.Kind() != reflect.Slice {
-        return nil, fmt.Errorf("input must be a slice")
-    }
+	v := reflect.ValueOf(data)
+	if v.Kind() != reflect.Slice {
+		return nil, fmt.Errorf("input must be a slice")
+	}
 
-    result := make([]T, 0)
+	result := make([]T, 0)
 
-    for i := 0; i < v.Len(); i++ {
-        elem := v.Index(i).Interface()
+	for i := 0; i < v.Len(); i++ {
+		elem := v.Index(i).Interface()
 
-        // Extract deep slice
-        deepSliceValue, err := GetValueByPath(elem, slicePath)
-        if err != nil {
-            if strictMode {
-                return nil, fmt.Errorf("error extracting deep slice at index %d: %v", i, err)
-            }
-            continue
-        }
+		// Extract deep slice
+		deepSliceValue, err := GetValueByPath(elem, slicePath)
+		if err != nil {
+			if strictMode {
+				return nil, fmt.Errorf("error extracting deep slice at index %d: %v", i, err)
+			}
+			continue
+		}
 
-        deepSlice := reflect.ValueOf(deepSliceValue)
-        if deepSlice.Kind() != reflect.Slice {
-            return nil, fmt.Errorf("value at slicePath must be a slice")
-        }
+		deepSlice := reflect.ValueOf(deepSliceValue)
+		if deepSlice.Kind() != reflect.Slice {
+			return nil, fmt.Errorf("value at slicePath must be a slice")
+		}
 
-        // If paths is empty, directly append the elements of the deep slice
-        if len(paths) == 0 {
-            for j := 0; j < deepSlice.Len(); j++ {
-                item := deepSlice.Index(j).Interface()
-                if reflect.TypeOf(item).AssignableTo(reflect.TypeOf(element)) {
-                    result = append(result, item.(T))
-                } else {
-                    return nil, fmt.Errorf("element type mismatch at index %d,%d: expected %T, got %T", i, j, element, item)
-                }
-            }
-        } else {
-            // Process each item in the deep slice
-            for j := 0; j < deepSlice.Len(); j++ {
-                item := deepSlice.Index(j).Interface()
-                newElement := reflect.New(reflect.TypeOf(element)).Elem()
+		// If paths is empty, deep copy the elements of the deep slice
+		if len(paths) == 0 {
+			for j := 0; j < deepSlice.Len(); j++ {
+				item := deepSlice.Index(j).Interface()
+				if reflect.TypeOf(item).AssignableTo(reflect.TypeOf(element)) {
+					// Create a new value and deep copy the item
+					newValue := reflect.New(reflect.TypeOf(element)).Elem()
+					err := deepCopy(newValue, reflect.ValueOf(item))
+					if err != nil {
+						return nil, fmt.Errorf("error deep copying element at index %d,%d: %v", i, j, err)
+					}
+					result = append(result, newValue.Interface().(T))
+				} else {
+					return nil, fmt.Errorf("element type mismatch at index %d,%d: expected %T, got %T", i, j, element, item)
+				}
+			}
+		} else {
+			// Process each item in the deep slice
+			for j := 0; j < deepSlice.Len(); j++ {
+				item := deepSlice.Index(j).Interface()
+				newElement := reflect.New(reflect.TypeOf(element)).Elem()
 
-                // Extract values for each path
-                for _, path := range paths {
-                    value, err := GetValueByPath(item, path)
-                    if err != nil {
-                        if strictMode {
-                            return nil, fmt.Errorf("error extracting value from path %s for element %d,%d: %v", path, i, j, err)
-                        }
-                        value = nil
-                    }
+				// Extract values for each path
+				for _, path := range paths {
+					value, err := GetValueByPath(item, path)
+					if err != nil {
+						if strictMode {
+							return nil, fmt.Errorf("error extracting value from path %s for element %d,%d: %v", path, i, j, err)
+						}
+						value = nil
+					}
 
-                    field := newElement.FieldByName(path)
-                    if field.IsValid() && field.CanSet() {
-                        err := setField(field, value)
-                        if err != nil {
-                            return nil, fmt.Errorf("error setting field %s: %v", path, err)
-                        }
-                    }
-                }
+					field := newElement.FieldByName(path)
+					if field.IsValid() && field.CanSet() {
+						err := setField(field, value)
+						if err != nil {
+							return nil, fmt.Errorf("error setting field %s: %v", path, err)
+						}
+					}
+				}
 
-                result = append(result, newElement.Interface().(T))
-            }
-        }
-    }
+				result = append(result, newElement.Interface().(T))
+			}
+		}
+	}
 
-    return result, nil // Always return the slice, even if it's empty
+	return result, nil // Always return the slice, even if it's empty
+}
+
+// deepCopy performs a deep copy of src into dst
+func deepCopy(dst, src reflect.Value) error {
+	if src.IsValid() && src.Type().AssignableTo(dst.Type()) {
+		switch src.Kind() {
+		case reflect.Ptr, reflect.Interface:
+			if src.IsNil() {
+				return nil
+			}
+			dst.Set(reflect.New(src.Elem().Type()))
+			return deepCopy(dst.Elem(), src.Elem())
+		case reflect.Struct:
+			for i := 0; i < src.NumField(); i++ {
+				if err := deepCopy(dst.Field(i), src.Field(i)); err != nil {
+					return err
+				}
+			}
+		case reflect.Slice, reflect.Array:
+			dst.Set(reflect.MakeSlice(src.Type(), src.Len(), src.Cap()))
+			for i := 0; i < src.Len(); i++ {
+				if err := deepCopy(dst.Index(i), src.Index(i)); err != nil {
+					return err
+				}
+			}
+		case reflect.Map:
+			dst.Set(reflect.MakeMap(src.Type()))
+			for _, key := range src.MapKeys() {
+				dstVal := reflect.New(src.MapIndex(key).Type()).Elem()
+				if err := deepCopy(dstVal, src.MapIndex(key)); err != nil {
+					return err
+				}
+				dst.SetMapIndex(key, dstVal)
+			}
+		default:
+			dst.Set(src)
+		}
+		return nil
+	}
+	return fmt.Errorf("types do not match: %v vs %v", dst.Type(), src.Type())
 }
 
 func DataframeToStruct[T any](df dataframe.DataFrame) ([]T, error) {
