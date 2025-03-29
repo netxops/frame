@@ -280,17 +280,20 @@ func DeepSliceToSlice[T any](data interface{}, element T, slicePath string, stri
 		}
 
 		// If paths is empty, deep copy the elements of the deep slice
+		// 在 DeepSliceToSlice 函数中
 		if len(paths) == 0 {
 			for j := 0; j < deepSlice.Len(); j++ {
 				item := deepSlice.Index(j).Interface()
 				if reflect.TypeOf(item).AssignableTo(reflect.TypeOf(element)) {
-					// Create a new value and deep copy the item
-					newValue := reflect.New(reflect.TypeOf(element)).Elem()
-					err := DeepCopy(newValue, reflect.ValueOf(item))
+					// 创建一个新的指针值
+					newValue := reflect.New(reflect.TypeOf(element)).Interface()
+					// 使用指针调用 DeepCopy
+					err := DeepCopy(newValue, item)
 					if err != nil {
 						return nil, fmt.Errorf("error deep copying element at index %d,%d: %v", i, j, err)
 					}
-					result = append(result, newValue.Interface().(T))
+					// 将指针解引用并添加到结果中
+					result = append(result, reflect.ValueOf(newValue).Elem().Interface().(T))
 				} else {
 					return nil, fmt.Errorf("element type mismatch at index %d,%d: expected %T, got %T", i, j, element, item)
 				}
@@ -355,21 +358,21 @@ func DeepCopy(dst, src interface{}) error {
 }
 
 func deepCopy(dst, src reflect.Value, visited map[uintptr]bool) error {
-    // 只有在处理可寻址的复杂类型时才检查和记录访问
-    if src.Kind() == reflect.Ptr || src.Kind() == reflect.Interface || src.Kind() == reflect.Struct || 
-       src.Kind() == reflect.Slice || src.Kind() == reflect.Map {
-        if src.CanAddr() {
-            ptr := src.UnsafeAddr()
-            if visited[ptr] {
-                return nil
-            }
-            visited[ptr] = true
-        }
-    }
+	// 只有在处理可寻址的复杂类型时才检查和记录访问
+	if src.Kind() == reflect.Ptr || src.Kind() == reflect.Interface || src.Kind() == reflect.Struct ||
+		src.Kind() == reflect.Slice || src.Kind() == reflect.Map {
+		if src.CanAddr() {
+			ptr := src.UnsafeAddr()
+			if visited[ptr] {
+				return nil
+			}
+			visited[ptr] = true
+		}
+	}
 
-    if !src.IsValid() {
-        return fmt.Errorf("source value is invalid")
-    }
+	if !src.IsValid() {
+		return fmt.Errorf("source value is invalid")
+	}
 
 	if dst.Kind() == reflect.Ptr {
 		if dst.IsNil() {
@@ -396,11 +399,11 @@ func deepCopy(dst, src reflect.Value, visited map[uintptr]bool) error {
 			dst.SetString(src.String())
 		}
 	case reflect.Struct:
-        for i := 0; i < src.NumField(); i++ {
-            if err := deepCopy(dst.Field(i), src.Field(i), visited); err != nil {
-                return err
-            }
-        }
+		for i := 0; i < src.NumField(); i++ {
+			if err := deepCopy(dst.Field(i), src.Field(i), visited); err != nil {
+				return err
+			}
+		}
 	case reflect.Slice:
 		if src.IsNil() {
 			dst.Set(reflect.Zero(src.Type()))
