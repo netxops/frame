@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -1818,4 +1819,277 @@ func TestDeepSliceToSlice(t *testing.T) {
 			}
 		})
 	}
+}
+func TestDeepCopy(t *testing.T) {
+	t.Run("Basic Types", func(t *testing.T) {
+		testCases := []struct {
+			name string
+			src  interface{}
+		}{
+			{"Int", 42},
+			{"Int8", int8(8)},
+			{"Int16", int16(16)},
+			{"Int32", int32(32)},
+			{"Int64", int64(64)},
+			{"Uint", uint(42)},
+			{"Uint8", uint8(8)},
+			{"Uint16", uint16(16)},
+			{"Uint32", uint32(32)},
+			{"Uint64", uint64(64)},
+			{"Float32", float32(3.14)},
+			{"Float64", 3.14},
+			{"Complex64", complex64(1 + 2i)},
+			{"Complex128", 1 + 2i},
+			{"String", "hello"},
+			{"Bool", true},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				dst := reflect.New(reflect.TypeOf(tc.src)).Interface()
+				err := DeepCopy(dst, tc.src)
+				if err != nil {
+					t.Fatalf("DeepCopy failed: %v", err)
+				}
+				if reflect.ValueOf(dst).Elem().Interface() != tc.src {
+					t.Errorf("DeepCopy result mismatch. Got %v, want %v", reflect.ValueOf(dst).Elem().Interface(), tc.src)
+				}
+			})
+		}
+	})
+	t.Run("Pointers", func(t *testing.T) {
+		x := 42
+		src := &x
+		var dst int
+		err := DeepCopy(&dst, src)
+		if err != nil {
+			t.Fatalf("DeepCopy failed: %v", err)
+		}
+		if dst != *src {
+			t.Errorf("DeepCopy result mismatch. Got %v, want %v", dst, *src)
+		}
+	})
+
+	t.Run("Structs", func(t *testing.T) {
+		type Person struct {
+			Name string
+			Age  int
+		}
+		src := Person{Name: "Alice", Age: 30}
+		var dst Person
+		err := DeepCopy(&dst, &src) // 注意这里改为传递指针
+		if err != nil {
+			t.Fatalf("DeepCopy failed: %v", err)
+		}
+		if !reflect.DeepEqual(dst, src) {
+			t.Errorf("DeepCopy result mismatch. Got %v, want %v", dst, src)
+		}
+	})
+
+	t.Run("Slices", func(t *testing.T) {
+		testCases := []struct {
+			name string
+			src  interface{}
+		}{
+			{"IntSlice", []int{1, 2, 3, 4, 5}},
+			{"StringSlice", []string{"a", "b", "c"}},
+			{"FloatSlice", []float64{1.1, 2.2, 3.3}},
+			{"EmptySlice", []int{}},
+			{"NilSlice", []int(nil)},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				dst := reflect.New(reflect.TypeOf(tc.src)).Interface()
+				err := DeepCopy(dst, tc.src)
+				if err != nil {
+					t.Fatalf("DeepCopy failed: %v", err)
+				}
+				if !reflect.DeepEqual(reflect.ValueOf(dst).Elem().Interface(), tc.src) {
+					t.Errorf("DeepCopy result mismatch. Got %v, want %v", reflect.ValueOf(dst).Elem().Interface(), tc.src)
+				}
+			})
+		}
+	})
+
+	t.Run("Arrays", func(t *testing.T) {
+		testCases := []struct {
+			name string
+			src  interface{}
+		}{
+			{"IntArray", [5]int{1, 2, 3, 4, 5}},
+			{"StringArray", [3]string{"a", "b", "c"}},
+			{"FloatArray", [2]float64{1.1, 2.2}},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				dst := reflect.New(reflect.TypeOf(tc.src)).Interface()
+				err := DeepCopy(dst, tc.src)
+				if err != nil {
+					t.Fatalf("DeepCopy failed: %v", err)
+				}
+				if !reflect.DeepEqual(reflect.ValueOf(dst).Elem().Interface(), tc.src) {
+					t.Errorf("DeepCopy result mismatch. Got %v, want %v", reflect.ValueOf(dst).Elem().Interface(), tc.src)
+				}
+			})
+		}
+	})
+
+	t.Run("Maps", func(t *testing.T) {
+		testCases := []struct {
+			name string
+			src  interface{}
+		}{
+			{"StringIntMap", map[string]int{"one": 1, "two": 2, "three": 3}},
+			{"IntStringMap", map[int]string{1: "one", 2: "two", 3: "three"}},
+			{"EmptyMap", map[string]int{}},
+			{"NilMap", map[string]int(nil)},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				dst := reflect.New(reflect.TypeOf(tc.src)).Interface()
+				err := DeepCopy(dst, tc.src)
+				if err != nil {
+					t.Fatalf("DeepCopy failed: %v", err)
+				}
+				if !reflect.DeepEqual(reflect.ValueOf(dst).Elem().Interface(), tc.src) {
+					t.Errorf("DeepCopy result mismatch. Got %v, want %v", reflect.ValueOf(dst).Elem().Interface(), tc.src)
+				}
+			})
+		}
+	})
+
+	t.Run("Nested Structures", func(t *testing.T) {
+		type Address struct {
+			Street string
+			City   string
+		}
+
+		type Person struct {
+			Name    string
+			Age     int
+			Address Address
+			Hobbies []string
+			Scores  map[string]int
+		}
+
+		src := Person{
+			Name: "Bob",
+			Age:  25,
+			Address: Address{
+				Street: "123 Main St",
+				City:   "Anytown",
+			},
+			Hobbies: []string{"reading", "swimming"},
+			Scores:  map[string]int{"math": 95, "science": 88},
+		}
+		var dst Person
+		err := DeepCopy(&dst, src)
+		if err != nil {
+			t.Fatalf("DeepCopy failed: %v", err)
+		}
+		if !reflect.DeepEqual(dst, src) {
+			t.Errorf("DeepCopy result mismatch. Got %v, want %v", dst, src)
+		}
+	})
+
+	t.Run("Circular References", func(t *testing.T) {
+		type Node struct {
+			Value int
+			Next  *Node
+		}
+		src := &Node{Value: 1}
+		src.Next = &Node{Value: 2}
+		src.Next.Next = src // Create a circular reference
+
+		var dst Node
+		err := DeepCopy(&dst, src)
+		if err != nil {
+			t.Fatalf("DeepCopy failed: %v", err)
+		}
+		if dst.Value != src.Value || dst.Next.Value != src.Next.Value {
+			t.Errorf("DeepCopy result mismatch. Got %v -> %v, want %v -> %v",
+				dst.Value, dst.Next.Value, src.Value, src.Next.Value)
+		}
+		if dst.Next.Next == &dst {
+			t.Errorf("DeepCopy did not break circular reference")
+		}
+	})
+
+	t.Run("Interfaces", func(t *testing.T) {
+		testCases := []struct {
+			name string
+			src  interface{}
+		}{
+			{"StringInterface", interface{}("test string")},
+			{"IntInterface", interface{}(42)},
+			{"StructInterface", interface{}(struct{ X int }{X: 10})},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				dst := reflect.New(reflect.TypeOf(tc.src)).Interface()
+				err := DeepCopy(dst, tc.src)
+				if err != nil {
+					t.Fatalf("DeepCopy failed: %v", err)
+				}
+				if !reflect.DeepEqual(reflect.ValueOf(dst).Elem().Interface(), tc.src) {
+					t.Errorf("DeepCopy result mismatch. Got %v, want %v", reflect.ValueOf(dst).Elem().Interface(), tc.src)
+				}
+			})
+		}
+	})
+
+	t.Run("Type Mismatch", func(t *testing.T) {
+		testCases := []struct {
+			name string
+			src  interface{}
+			dst  interface{}
+		}{
+			{"IntToString", 42, ""},
+			{"StringToInt", "42", 0},
+			{"FloatToInt", 3.14, 0},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				err := DeepCopy(reflect.ValueOf(&tc.dst).Elem(), reflect.ValueOf(tc.src))
+				if err == nil {
+					t.Fatalf("deepCopy should have failed due to type mismatch")
+				}
+			})
+		}
+	})
+
+	t.Run("Special Values", func(t *testing.T) {
+		testCases := []struct {
+			name string
+			src  interface{}
+		}{
+			{"MaxInt", int(^uint(0) >> 1)},
+			{"MinInt", -int(^uint(0)>>1) - 1},
+			{"NaN", math.NaN()},
+			{"PosInf", math.Inf(1)},
+			{"NegInf", math.Inf(-1)},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				dst := reflect.New(reflect.TypeOf(tc.src)).Interface()
+				err := DeepCopy(dst, tc.src)
+				if err != nil {
+					t.Fatalf("DeepCopy failed: %v", err)
+				}
+				if tc.name == "NaN" {
+					if !math.IsNaN(reflect.ValueOf(dst).Elem().Float()) {
+						t.Errorf("Expected NaN, got %v", reflect.ValueOf(dst).Elem().Interface())
+					}
+				} else if !reflect.DeepEqual(reflect.ValueOf(dst).Elem().Interface(), tc.src) {
+					t.Errorf("DeepCopy result mismatch. Got %v, want %v", reflect.ValueOf(dst).Elem().Interface(), tc.src)
+				}
+			})
+		}
+	})
 }

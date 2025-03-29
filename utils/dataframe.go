@@ -286,7 +286,7 @@ func DeepSliceToSlice[T any](data interface{}, element T, slicePath string, stri
 				if reflect.TypeOf(item).AssignableTo(reflect.TypeOf(element)) {
 					// Create a new value and deep copy the item
 					newValue := reflect.New(reflect.TypeOf(element)).Elem()
-					err := deepCopy(newValue, reflect.ValueOf(item))
+					err := DeepCopy(newValue, reflect.ValueOf(item))
 					if err != nil {
 						return nil, fmt.Errorf("error deep copying element at index %d,%d: %v", i, j, err)
 					}
@@ -328,45 +328,335 @@ func DeepSliceToSlice[T any](data interface{}, element T, slicePath string, stri
 	return result, nil // Always return the slice, even if it's empty
 }
 
-// deepCopy performs a deep copy of src into dst
-func deepCopy(dst, src reflect.Value) error {
-	if src.IsValid() && src.Type().AssignableTo(dst.Type()) {
-		switch src.Kind() {
-		case reflect.Ptr, reflect.Interface:
-			if src.IsNil() {
-				return nil
-			}
-			dst.Set(reflect.New(src.Elem().Type()))
-			return deepCopy(dst.Elem(), src.Elem())
-		case reflect.Struct:
-			for i := 0; i < src.NumField(); i++ {
-				if err := deepCopy(dst.Field(i), src.Field(i)); err != nil {
-					return err
-				}
-			}
-		case reflect.Slice, reflect.Array:
-			dst.Set(reflect.MakeSlice(src.Type(), src.Len(), src.Cap()))
-			for i := 0; i < src.Len(); i++ {
-				if err := deepCopy(dst.Index(i), src.Index(i)); err != nil {
-					return err
-				}
-			}
-		case reflect.Map:
-			dst.Set(reflect.MakeMap(src.Type()))
-			for _, key := range src.MapKeys() {
-				dstVal := reflect.New(src.MapIndex(key).Type()).Elem()
-				if err := deepCopy(dstVal, src.MapIndex(key)); err != nil {
-					return err
-				}
-				dst.SetMapIndex(key, dstVal)
-			}
-		default:
-			dst.Set(src)
-		}
-		return nil
+func DeepCopy(dst, src interface{}) error {
+	dstVal := reflect.ValueOf(dst)
+	srcVal := reflect.ValueOf(src)
+
+	// Check if dst is a pointer and not nil
+	if dstVal.Kind() != reflect.Ptr || dstVal.IsNil() {
+		return fmt.Errorf("destination must be a non-nil pointer")
 	}
-	return fmt.Errorf("types do not match: %v vs %v", dst.Type(), src.Type())
+
+	// Get the element that dst points to
+	dstElem := dstVal.Elem()
+
+	// If src is a pointer, get its element; otherwise use src directly
+	if srcVal.Kind() == reflect.Ptr {
+		srcVal = srcVal.Elem()
+	}
+
+	// Check if types are compatible
+	if !srcVal.Type().AssignableTo(dstElem.Type()) {
+		return fmt.Errorf("source type %v is not assignable to destination type %v", srcVal.Type(), dstElem.Type())
+	}
+
+	// Perform the actual copy
+	return deepCopy(dstElem, srcVal, make(map[uintptr]bool))
 }
+
+func deepCopy(dst, src reflect.Value, visited map[uintptr]bool) error {
+    // 只有在处理可寻址的复杂类型时才检查和记录访问
+    if src.Kind() == reflect.Ptr || src.Kind() == reflect.Interface || src.Kind() == reflect.Struct || 
+       src.Kind() == reflect.Slice || src.Kind() == reflect.Map {
+        if src.CanAddr() {
+            ptr := src.UnsafeAddr()
+            if visited[ptr] {
+                return nil
+            }
+            visited[ptr] = true
+        }
+    }
+
+    if !src.IsValid() {
+        return fmt.Errorf("source value is invalid")
+    }
+
+	if dst.Kind() == reflect.Ptr {
+		if dst.IsNil() {
+			dst.Set(reflect.New(dst.Type().Elem()))
+		}
+		dst = dst.Elem()
+	}
+
+	if src.Kind() == reflect.Ptr {
+		if src.IsNil() {
+			dst.Set(reflect.Zero(dst.Type()))
+			return nil
+		}
+		src = src.Elem()
+	}
+
+	if !src.Type().AssignableTo(dst.Type()) {
+		return fmt.Errorf("types do not match: dst %v vs src %v", dst.Type(), src.Type())
+	}
+
+	switch src.Kind() {
+	case reflect.String:
+		if dst.CanSet() {
+			dst.SetString(src.String())
+		}
+	case reflect.Struct:
+        for i := 0; i < src.NumField(); i++ {
+            if err := deepCopy(dst.Field(i), src.Field(i), visited); err != nil {
+                return err
+            }
+        }
+	case reflect.Slice:
+		if src.IsNil() {
+			dst.Set(reflect.Zero(src.Type()))
+			return nil
+		}
+		dst.Set(reflect.MakeSlice(src.Type(), src.Len(), src.Cap()))
+		for i := 0; i < src.Len(); i++ {
+			if err := deepCopy(dst.Index(i), src.Index(i), visited); err != nil {
+				return err
+			}
+		}
+	case reflect.Array:
+		if dst.Len() != src.Len() {
+			return fmt.Errorf("cannot copy array of different length")
+		}
+		for i := 0; i < src.Len(); i++ {
+			if err := deepCopy(dst.Index(i), src.Index(i), visited); err != nil {
+				return err
+			}
+		}
+	case reflect.Map:
+		if src.IsNil() {
+			dst.Set(reflect.Zero(src.Type()))
+			return nil
+		}
+		dst.Set(reflect.MakeMap(src.Type()))
+		for _, key := range src.MapKeys() {
+			dstVal := reflect.New(src.MapIndex(key).Type()).Elem()
+			if err := deepCopy(dstVal, src.MapIndex(key), visited); err != nil {
+				return err
+			}
+			dst.SetMapIndex(key, dstVal)
+		}
+	case reflect.Interface:
+		if src.IsNil() {
+			dst.Set(reflect.Zero(dst.Type()))
+			return nil
+		}
+		srcElem := src.Elem()
+		dstElem := reflect.New(srcElem.Type()).Elem()
+		if err := deepCopy(dstElem, srcElem, visited); err != nil {
+			return err
+		}
+		dst.Set(dstElem)
+	case reflect.Chan, reflect.Func, reflect.UnsafePointer:
+		if src.IsNil() {
+			dst.Set(reflect.Zero(src.Type()))
+			return nil
+		}
+		dst.Set(src)
+	default:
+		dst.Set(src)
+	}
+
+	return nil
+}
+
+// func DeepCopy(dst, src interface{}) error {
+// 	if dst == nil {
+// 		return errors.New("dst cannot be nil")
+// 	}
+// 	if src == nil {
+// 		return nil
+// 	}
+
+// 	dstVal := reflect.ValueOf(dst)
+// 	srcVal := reflect.ValueOf(src)
+
+// 	if dstVal.Kind() != reflect.Ptr {
+// 		return errors.New("dst must be a pointer")
+// 	}
+
+// 	dstVal = dstVal.Elem()
+
+// 	if srcVal.Kind() == reflect.Ptr {
+// 		srcVal = srcVal.Elem()
+// 	}
+
+// 	if !srcVal.Type().AssignableTo(dstVal.Type()) {
+// 		return fmt.Errorf("cannot assign %v to %v", srcVal.Type(), dstVal.Type())
+// 	}
+
+// 	visited := make(map[uintptr]reflect.Value)
+// 	return deepCopyValue(dstVal, srcVal, visited)
+// }
+
+// func deepCopyValue(dst, src reflect.Value, visited map[uintptr]reflect.Value) error {
+// 	if !src.IsValid() {
+// 		return nil
+// 	}
+
+// 	if src.CanAddr() {
+// 		ptr := src.UnsafeAddr()
+// 		if v, ok := visited[ptr]; ok {
+// 			dst.Set(v)
+// 			return nil
+// 		}
+// 		visited[ptr] = dst
+// 	}
+
+// 	switch src.Kind() {
+// 	case reflect.Struct:
+// 		for i := 0; i < src.NumField(); i++ {
+// 			if err := deepCopyValue(dst.Field(i), src.Field(i), visited); err != nil {
+// 				return err
+// 			}
+// 		}
+// 	case reflect.Slice:
+// 		if src.IsNil() {
+// 			dst.Set(reflect.Zero(src.Type()))
+// 			return nil
+// 		}
+// 		dst.Set(reflect.MakeSlice(src.Type(), src.Len(), src.Cap()))
+// 		for i := 0; i < src.Len(); i++ {
+// 			if err := deepCopyValue(dst.Index(i), src.Index(i), visited); err != nil {
+// 				return err
+// 			}
+// 		}
+// 	case reflect.Array:
+// 		for i := 0; i < src.Len(); i++ {
+// 			if err := deepCopyValue(dst.Index(i), src.Index(i), visited); err != nil {
+// 				return err
+// 			}
+// 		}
+// 	case reflect.Map:
+// 		if src.IsNil() {
+// 			dst.Set(reflect.Zero(src.Type()))
+// 			return nil
+// 		}
+// 		dst.Set(reflect.MakeMap(src.Type()))
+// 		for _, key := range src.MapKeys() {
+// 			dstVal := reflect.New(src.MapIndex(key).Type()).Elem()
+// 			if err := deepCopyValue(dstVal, src.MapIndex(key), visited); err != nil {
+// 				return err
+// 			}
+// 			dst.SetMapIndex(key, dstVal)
+// 		}
+// 	case reflect.Ptr:
+// 		if src.IsNil() {
+// 			dst.Set(reflect.Zero(dst.Type()))
+// 			return nil
+// 		}
+// 		dst.Set(reflect.New(src.Elem().Type()))
+// 		return deepCopyValue(dst.Elem(), src.Elem(), visited)
+// 	case reflect.Interface:
+// 		if src.IsNil() {
+// 			dst.Set(reflect.Zero(dst.Type()))
+// 			return nil
+// 		}
+// 		srcElem := src.Elem()
+// 		dstElem := reflect.New(srcElem.Type()).Elem()
+// 		if err := deepCopyValue(dstElem, srcElem, visited); err != nil {
+// 			return err
+// 		}
+// 		dst.Set(dstElem)
+// 	default:
+// 		dst.Set(src)
+// 	}
+// 	return nil
+// }
+
+// func DeepCopy(dst, src interface{}) error {
+// 	dstVal := reflect.ValueOf(dst)
+// 	srcVal := reflect.ValueOf(src)
+
+// 	// Check if dst is a pointer and not nil
+// 	if dstVal.Kind() != reflect.Ptr || dstVal.IsNil() {
+// 		return fmt.Errorf("destination must be a non-nil pointer")
+// 	}
+
+// 	// Get the element that dst points to
+// 	dstElem := dstVal.Elem()
+
+// 	// If src is a pointer, get its element; otherwise use src directly
+// 	if srcVal.Kind() == reflect.Ptr {
+// 		srcVal = srcVal.Elem()
+// 	}
+
+// 	// Check if types are compatible
+// 	if !srcVal.Type().AssignableTo(dstElem.Type()) {
+// 		return fmt.Errorf("source type %v is not assignable to destination type %v", srcVal.Type(), dstElem.Type())
+// 	}
+
+// 	// Perform the actual copy
+// 	return deepCopy(dstElem, srcVal, make(map[uintptr]interface{}))
+// }
+// func deepCopy(dst, src reflect.Value, visited map[uintptr]interface{}) error {
+// 	if !src.IsValid() {
+// 		return nil
+// 	}
+
+// 	if src.CanAddr() {
+// 		ptr := src.Addr().Pointer()
+// 		if v, ok := visited[ptr]; ok {
+// 			if dst.CanSet() {
+// 				dst.Set(reflect.ValueOf(v).Elem())
+// 			}
+// 			return nil
+// 		}
+// 		visited[ptr] = dst.Addr().Interface()
+// 	}
+
+// 	switch src.Kind() {
+// 	case reflect.Ptr:
+// 		if src.IsNil() {
+// 			return nil
+// 		}
+// 		dst.Set(reflect.New(src.Elem().Type()))
+// 		return deepCopy(dst.Elem(), src.Elem(), visited)
+// 	case reflect.Interface:
+// 		if src.IsNil() {
+// 			return nil
+// 		}
+// 		srcElem := src.Elem()
+// 		dstElem := reflect.New(srcElem.Type()).Elem()
+// 		if err := deepCopy(dstElem, srcElem, visited); err != nil {
+// 			return err
+// 		}
+// 		dst.Set(dstElem)
+// 	case reflect.Struct:
+// 		for i := 0; i < src.NumField(); i++ {
+// 			if err := deepCopy(dst.Field(i), src.Field(i), visited); err != nil {
+// 				return err
+// 			}
+// 		}
+// 	case reflect.Slice:
+// 		if src.IsNil() {
+// 			return nil
+// 		}
+// 		dst.Set(reflect.MakeSlice(src.Type(), src.Len(), src.Cap()))
+// 		for i := 0; i < src.Len(); i++ {
+// 			if err := deepCopy(dst.Index(i), src.Index(i), visited); err != nil {
+// 				return err
+// 			}
+// 		}
+// 	case reflect.Map:
+// 		if src.IsNil() {
+// 			return nil
+// 		}
+// 		dst.Set(reflect.MakeMap(src.Type()))
+// 		for _, key := range src.MapKeys() {
+// 			dstVal := reflect.New(src.MapIndex(key).Type()).Elem()
+// 			if err := deepCopy(dstVal, src.MapIndex(key), visited); err != nil {
+// 				return err
+// 			}
+// 			dst.SetMapIndex(key, dstVal)
+// 		}
+// 	default:
+// 		if dst.CanSet() && src.Type().AssignableTo(dst.Type()) {
+// 			dst.Set(src)
+// 		} else {
+// 			return fmt.Errorf("cannot copy %v to %v", src.Type(), dst.Type())
+// 		}
+// 	}
+// 	return nil
+// }
 
 func DataframeToStruct[T any](df dataframe.DataFrame) ([]T, error) {
 	var result []T

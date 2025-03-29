@@ -3,6 +3,7 @@ module github.com/netxops/frame
 go 1.23
 
 require (
+	github.com/jinzhu/copier v0.4.0
 	github.com/spf13/cast v1.7.1
 	github.com/stretchr/testify v1.2.2
 	golang.org/x/net v0.0.0-20210423184538-5f58ad60dda6
